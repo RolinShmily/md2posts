@@ -2,24 +2,26 @@
 
 source:
   type: fs
-  # 博客 content/posts 目录的相对路径或绝对路径
-  postsRoot: ../SrP-BloG/content/posts
-  # 博客 Git 仓库根目录（可选。若开启 gitPull 且此处留空，则自动从 postsRoot 向上探查包含 .git 的目录）
-  repoRoot: ""
-  # 远程 Git 仓库克隆地址（可选。若本地未克隆，首次运行自动 git clone）
-  repoUrl: ""
-  # Git 远端名称（可选，默认: origin）
+  # 远程博客 Git 仓库地址（默认从远程拉取，任何 VPS 均零配置开箱即用）
+  repoUrl: "https://github.com/RolinShmily/SrP-BloG.git"
+  # Git 远端名称（默认: origin）
   gitRemote: "origin"
-  # Git 目标分支（可选，默认当前分支或 main）
+  # Git 目标分支（默认: main）
   gitBranch: "main"
+  # 每次同步前自动从远程拉取最新提交（默认: true，自动远程拉取）
+  gitPull: true
+  # 仓库内文章相对路径（默认: content/posts）
+  postsPath: "content/posts"
+  # 本地仓库缓存目录（可选，留空则自动缓存在 .cache/blog-repo，无需手动管理）
+  repoRoot: ""
+  # （可选）若希望直接使用本地已有文章目录，可取消下行注释指定本地路径：
+  # postsRoot: "../SrP-BloG/content/posts"
   # bundle 表示每篇文章为一个目录 (<slug>/index.md)；flat 表示 posts/xxx.md
   layout: bundle
-  # 静态资源查找根目录（按顺序匹配，{postDir} 代表当前文章所在目录）
+  # 静态资源查找根目录（按顺序匹配，{postDir} 代表当前文章目录，{repoRoot} 代表博客仓库根目录）
   assetRoots:
     - "{postDir}"
-    - "../SrP-BloG/public"
-  # 定时任务执行前是否先执行 git pull --ff-only
-  gitPull: false
+    - "{repoRoot}/public"
 
 site:
   url: "https://blog.srprolin.com"
@@ -52,7 +54,7 @@ sync:
   # 定时 sync 时是否自动将已修改的老文章也重新推送到草稿箱（默认 false：sync 只推新文章，老文章修改后由人工通过 push 选择推送）
   syncUpdated: false
   # 兜底封面图路径（当文章无 frontmatter 封面且正文无本地图片时使用）
-  defaultCover: "../SrP-BloG/public/og/og.png"
+  defaultCover: ""
   # 是否自动下载 jsDelivr 等外链图片转传至微信（防防盗链失效）
   downloadRemoteImages: true
   # 是否开启草稿评论 (0 关闭, 1 开启)
@@ -70,4 +72,3 @@ notify:
   webhookUrl: ""
   onSuccess: true
   onFailure: true
-

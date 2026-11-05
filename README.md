@@ -22,6 +22,7 @@
 **md2wechat** converts static blog posts written in Markdown + YAML frontmatter (built initially for [SrP-BloG](https://github.com/RolinShmily/SrP-BloG), and configurable for Hugo, Hexo, Astro, etc.) into WeChat-compatible rich HTML with inline styles and synchronizes them to the **WeChat Official Account Draft Box** (`cgi-bin/draft/*`) for final human review and publication.
 
 - **Non-Intrusive by Design**: Never modifies or pollutes the source blog repository. All sync states, SHA-256 asset caches, and configurations live outside the blog repository.
+- **Default Remote Pull (Zero-Setup on VPS)**: Automatically pulls and syncs directly from the remote Git blog repository (`https://github.com/RolinShmily/SrP-BloG.git` by default, customizable in `config.yaml`). On first run it clones automatically into `.cache/blog-repo`, and on subsequent runs it fetches latest commits via `git pull --ff-only`. You do not need to manually clone or manage the blog repository on your VPS!
 - **28 Built-in WeChat Themes**: Powered by the vendored [laogou717/md-wechat](https://github.com/laogou717/md-wechat) rendering engine, outputting WeChat-safe `<section>` list structures and line-by-line `<code style="display:block">` blocks that survive WeChat's editor sanitizer.
 - **Smart Sync Policy**:
   - **Routine Auto-Sync (`sync`)**: Pushes **brand-new articles only** by default—routine edits or typo fixes on historical blog posts are detected by `check` but will not clutter your WeChat Draft Box automatically.

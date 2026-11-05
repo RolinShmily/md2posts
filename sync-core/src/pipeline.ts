@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { WeChatClient, WeChatError } from '@md2wechat/wechat-sdk';
 import { renderArticle, preprocessMarkdown } from '@md2wechat/renderer';
-import { FsSource, SourcePost } from '@md2wechat/sources';
+import { FsSource, SourcePost, findGitRoot } from '@md2wechat/sources';
 import { StateStore } from './state-store.js';
 import { ImageProcessor, resolveLocalAssetPath } from './image-processor.js';
 import { normalizeWeChatTitle, normalizeWeChatDigest } from './normalize.js';
@@ -556,6 +556,17 @@ export class SyncPipeline {
       const defPath = path.resolve(this.config.sync.defaultCover);
       if (fs.existsSync(defPath)) {
         coverLocalPath = defPath;
+      }
+    }
+
+    // Fallback 3: Auto-detect {repoRoot}/public/og/og.png from blog repository
+    if (!coverLocalPath) {
+      const repoRoot = findGitRoot(post.postDir);
+      if (repoRoot) {
+        const repoOg = path.join(repoRoot, 'public', 'og', 'og.png');
+        if (fs.existsSync(repoOg)) {
+          coverLocalPath = repoOg;
+        }
       }
     }
 

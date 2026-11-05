@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import type { WeChatClient } from '@md2wechat/wechat-sdk';
+import { findGitRoot } from '@md2wechat/sources';
 import type { StateStore } from './state-store.js';
 
 export interface ProcessedImage {
@@ -47,7 +48,9 @@ export function resolveLocalAssetPath(
   const roots = assetRoots.length > 0 ? assetRoots : ['{postDir}'];
 
   for (const rootPattern of roots) {
-    const rootDir = rootPattern.replace(/\{postDir\}/g, postDir);
+    const rootDir = rootPattern
+      .replace(/\{postDir\}/g, postDir)
+      .replace(/\{repoRoot\}/g, () => findGitRoot(postDir) || path.dirname(path.dirname(postDir)));
     const candidate = path.resolve(rootDir, cleanRel);
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       return candidate;

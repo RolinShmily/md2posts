@@ -80,27 +80,34 @@ export function loadConfig(configPath?: string): AppConfig {
   const appId = process.env.WECHAT_APPID || parsed.wechat?.appId || '';
   const appSecret = process.env.WECHAT_SECRET || parsed.wechat?.appSecret || '';
 
-  const rawPostsRoot = parsed.source?.postsRoot || parsed.source?.root || '../SrP-BloG/content/posts';
-  const rawRepoRoot = parsed.source?.repoRoot;
-  const rawRepoUrl = parsed.source?.repoUrl;
+  const hasExplicitPostsRoot = Boolean(parsed.source?.postsRoot || parsed.source?.root);
+  const rawRepoUrl =
+    parsed.source?.repoUrl !== undefined
+      ? parsed.source.repoUrl
+      : (hasExplicitPostsRoot ? undefined : 'https://github.com/RolinShmily/SrP-BloG.git');
   const rawGitRemote = parsed.source?.gitRemote || parsed.source?.remote || 'origin';
-  const rawGitBranch = parsed.source?.gitBranch || parsed.source?.branch;
+  const rawGitBranch = parsed.source?.gitBranch || parsed.source?.branch || 'main';
+  const rawPostsPath = parsed.source?.postsPath || 'content/posts';
+  const rawGitPull = parsed.source?.gitPull !== false; // 默认 true (开启远程拉取)
+  const rawPostsRoot = parsed.source?.postsRoot || parsed.source?.root;
+  const rawRepoRoot = parsed.source?.repoRoot;
   const rawStateFile = parsed.sync?.stateFile || './state.json';
   const rawDefaultCover = parsed.sync?.defaultCover;
   const rawAssetRoots: string[] = Array.isArray(parsed.source?.assetRoots)
     ? parsed.source.assetRoots
-    : ['{postDir}', '../SrP-BloG/public'];
+    : ['{postDir}', '{repoRoot}/public'];
 
   return {
     source: {
-      postsRoot: resolveConfigRelativePath(rawPostsRoot, configDir),
+      postsRoot: rawPostsRoot ? resolveConfigRelativePath(rawPostsRoot, configDir) : undefined,
+      postsPath: rawPostsPath,
       repoRoot: rawRepoRoot ? resolveConfigRelativePath(rawRepoRoot, configDir) : undefined,
       repoUrl: rawRepoUrl ? String(rawRepoUrl).trim() : undefined,
-      gitRemote: rawGitRemote ? String(rawGitRemote).trim() : undefined,
-      gitBranch: rawGitBranch ? String(rawGitBranch).trim() : undefined,
+      gitRemote: String(rawGitRemote).trim(),
+      gitBranch: String(rawGitBranch).trim(),
       layout: parsed.source?.layout || 'bundle',
       assetRoots: rawAssetRoots.map((r) => resolveConfigRelativePath(String(r), configDir)),
-      gitPull: Boolean(parsed.source?.gitPull),
+      gitPull: rawGitPull,
       siteUrl: parsed.site?.url || 'https://blog.srprolin.com',
       postPathPattern: parsed.site?.postPath || '/posts/{slug}/',
       fieldMapping: parsed.fields || {},

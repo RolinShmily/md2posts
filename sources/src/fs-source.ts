@@ -112,8 +112,9 @@ export class FsSource implements SourceAdapter {
   private readonly postsRoot: string;
   private readonly repoRoot?: string;
   private readonly repoUrl?: string;
-  private readonly gitRemote?: string;
-  private readonly gitBranch?: string;
+  private readonly gitRemote: string;
+  private readonly gitBranch: string;
+  private readonly postsPath: string;
   private readonly layout: 'bundle' | 'flat';
   private readonly gitPull: boolean;
   private readonly siteUrl: string;
@@ -121,13 +122,34 @@ export class FsSource implements SourceAdapter {
   private readonly fieldMapping: Required<FieldMapping>;
 
   constructor(options: FsSourceOptions) {
-    this.postsRoot = path.resolve(options.postsRoot);
-    this.repoRoot = options.repoRoot ? path.resolve(options.repoRoot) : undefined;
     this.repoUrl = options.repoUrl ? options.repoUrl.trim() : undefined;
-    this.gitRemote = options.gitRemote ? options.gitRemote.trim() : undefined;
-    this.gitBranch = options.gitBranch ? options.gitBranch.trim() : undefined;
+    this.gitRemote = options.gitRemote ? options.gitRemote.trim() : 'origin';
+    this.gitBranch = options.gitBranch ? options.gitBranch.trim() : 'main';
+    this.postsPath = options.postsPath
+      ? options.postsPath.trim().replace(/^[/\\]+|[/\\]+$/g, '')
+      : 'content/posts';
+    this.gitPull = options.gitPull !== false; // 默认 true (开启远程拉取)
+
+    // Determine repoRoot
+    if (options.repoRoot) {
+      this.repoRoot = path.resolve(options.repoRoot);
+    } else if (this.repoUrl) {
+      // Default local clone cache folder
+      this.repoRoot = path.resolve(process.cwd(), '.cache', 'blog-repo');
+    } else if (options.postsRoot) {
+      this.repoRoot = findGitRoot(path.resolve(options.postsRoot)) || undefined;
+    }
+
+    // Determine postsRoot
+    if (options.postsRoot) {
+      this.postsRoot = path.resolve(options.postsRoot);
+    } else if (this.repoRoot) {
+      this.postsRoot = path.join(this.repoRoot, this.postsPath);
+    } else {
+      this.postsRoot = path.resolve(process.cwd(), 'content', 'posts');
+    }
+
     this.layout = options.layout || 'bundle';
-    this.gitPull = Boolean(options.gitPull);
     this.siteUrl = (options.siteUrl || 'https://blog.srprolin.com').replace(/\/+$/, '');
     this.postPathPattern = options.postPathPattern || '/posts/{slug}/';
 
@@ -142,24 +164,32 @@ export class FsSource implements SourceAdapter {
   }
 
   /**
-   * Optional pre-run hook to pull latest git commits from the chosen repository.
+   * Prepares the source repository before scanning.
+   * If gitPull is enabled (default), ensures remote repository is cloned and pulled up to date.
    */
   public async prepare(): Promise<void> {
     if (!this.gitPull) return;
 
     let targetDir = this.repoRoot;
 
-    // 1. If repoUrl is configured and target directory does not exist, clone it first
-    if (this.repoUrl && targetDir && !fs.existsSync(targetDir)) {
+    const hasGit = Boolean(targetDir && fs.existsSync(path.join(targetDir, '.git')));
+
+    // 1. If repoUrl is configured and target directory is not yet a git repository, clone it
+    if (this.repoUrl && targetDir && !hasGit) {
       try {
-        console.log(`[Git] 正在从远程克隆仓库: ${this.repoUrl} -> ${targetDir} ...`);
+        if (fs.existsSync(targetDir)) {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+        console.log(`[Git] 首次运行，正在自动从远程克隆博客仓库:\n      ${this.repoUrl} -> ${targetDir} ...`);
         const cloneArgs = ['clone', this.repoUrl, targetDir];
         if (this.gitBranch) {
           cloneArgs.push('-b', this.gitBranch);
         }
-        await execFileAsync('git', cloneArgs, { timeout: 60_000 });
+        await execFileAsync('git', cloneArgs, { timeout: 120_000 });
+        console.log(`[Git] 远程仓库克隆完成！`);
       } catch (err: any) {
-        throw new Error(`[FsSource] git clone ${this.repoUrl} 失败: ${err.message}`);
+        throw new Error(`[FsSource] 从远程克隆 ${this.repoUrl} 失败: ${err.message}`);
       }
     }
 
@@ -169,26 +199,23 @@ export class FsSource implements SourceAdapter {
     }
 
     if (!targetDir || !fs.existsSync(targetDir)) {
+      if (!this.repoUrl) {
+        return; // No git repo configured, just read local files
+      }
       throw new Error(
-        `[FsSource] 开启了 gitPull，但在文章目录 ${this.postsRoot} 所在路径未找到 .git 仓库，且未在配置中指定 repoRoot`
+        `[FsSource] 开启了远程拉取，但在文章目录 ${this.postsRoot} 所在路径未找到有效 Git 仓库，且未指定有效 repoRoot`
       );
     }
 
     try {
-      const pullArgs = ['pull', '--ff-only'];
-      if (this.gitRemote) {
-        pullArgs.push(this.gitRemote);
-        if (this.gitBranch) {
-          pullArgs.push(this.gitBranch);
-        }
-      }
-      console.log(`[Git] 正在拉取博客仓库更新: ${targetDir} (${pullArgs.join(' ')}) ...`);
+      const pullArgs = ['pull', '--ff-only', this.gitRemote, this.gitBranch];
+      console.log(`[Git] 正在从远程拉取博客仓库最新更新 (${this.gitRemote}/${this.gitBranch}) ...`);
       await execFileAsync('git', pullArgs, {
         cwd: targetDir,
         timeout: 30_000,
       });
     } catch (err: any) {
-      throw new Error(`[FsSource] 在仓库目录 ${targetDir} 执行 git pull 失败: ${err.message}`);
+      console.warn(`[Git] 提示: 远程拉取未成功 (${err.message})，使用本地最新版本继续同步。`);
     }
   }
 

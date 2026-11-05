@@ -122,6 +122,7 @@ test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> 
 
   const config = loadConfig();
   config.source.postsRoot = postsRoot;
+  config.source.gitPull = false;
   config.source.assetRoots = ['{postDir}'];
   config.sync.stateFile = stateFile;
   config.notify = {

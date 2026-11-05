@@ -22,6 +22,7 @@
 **md2wechat** 用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（首个落地对象为 [SrP-BloG](https://github.com/RolinShmily/SrP-BloG)，通过字段映射配置即可适配 Hugo、Hexo、Astro 等任意静态博客）自动渲染为微信公众号兼容的内联样式 HTML，并同步推送至**微信公众号草稿箱**（`cgi-bin/draft/*`），最后由人工在公众号后台确认发表。
 
 - **零侵入设计**：不修改、不污染博客源仓库的任何文件或 frontmatter 字段。所有同步状态、图片 SHA-256 缓存与配置均独立保存在外部。
+- **默认远程拉取（VPS 零门槛开箱即用）**：默认直接从远程 Git 博客仓库（默认 `https://github.com/RolinShmily/SrP-BloG.git`，可在 `config.yaml` 自由修改）拉取同步。首次运行自动 clone 到 `.cache/blog-repo`，后续每次自动执行 `git pull --ff-only` 同步最新提交，你在 VPS 上**完全无需手动事先克隆或维护博客仓库**！
 - **内置 28 套公众号主题**：复用 [laogou717/md-wechat](https://github.com/laogou717/md-wechat) 渲染核心，列表采用微信安全的 `<section>` 结构（防嵌套列表被微信拍扁），代码块采用逐行块级 `<code>` + 内联高亮（防吞换行）。
 - **符合真实运营习惯的同步策略**：
   - **定时自动同步 (`sync`)**：默认**只自动推送新发表的文章**。老文章在博客上的修修补补会被 `check` 检测到，但不会自动重推刷屏你的公众号草稿箱。

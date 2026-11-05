@@ -146,6 +146,7 @@ draft: false
 
     const config = loadConfig();
     config.source.postsRoot = tmpDir;
+    config.source.gitPull = false;
     config.source.assetRoots = ['{postDir}'];
     config.sync.stateFile = tmpState;
     config.sync.defaultCover = path.join(postDir, 'cover.png');

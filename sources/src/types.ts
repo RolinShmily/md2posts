@@ -26,14 +26,15 @@ export interface FieldMapping {
 }
 
 export interface FsSourceOptions {
-  postsRoot: string;
-  repoRoot?: string;              // 显式指定的 Git 仓库目录（留空则从 postsRoot 自动向上寻根 .git）
-  repoUrl?: string;               // 远程 Git 仓库 URL（可选，若本地目录不存在可自动 clone）
+  postsRoot?: string;             // 本地文章目录（若指定则优先使用）
+  postsPath?: string;             // 仓库内文章相对路径，默认 'content/posts'
+  repoRoot?: string;              // 本地 Git 仓库目录（留空且配置了 repoUrl 时自动缓存在 .cache/blog-repo）
+  repoUrl?: string;               // 远程 Git 仓库 URL（默认远程拉取）
   gitRemote?: string;             // 远端名称，默认 'origin'
   gitBranch?: string;             // 目标分支，默认 'main' 或当前分支
   layout?: 'bundle' | 'flat';     // default: 'bundle' (slug/index.md)
-  assetRoots?: string[];          // default: ['{postDir}']
-  gitPull?: boolean;              // default: false
+  assetRoots?: string[];          // default: ['{postDir}', '{repoRoot}/public']
+  gitPull?: boolean;              // default: true (默认从远程拉取最新更新)
   siteUrl?: string;               // default: 'https://blog.srprolin.com'
   postPathPattern?: string;       // default: '/posts/{slug}/'
   fieldMapping?: FieldMapping;
