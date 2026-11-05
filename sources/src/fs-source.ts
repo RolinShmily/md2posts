@@ -90,9 +90,30 @@ function collectLocalAssets(rootDir: string): string[] {
   return out.sort();
 }
 
+/**
+ * Traverses parent directories upwards starting from startDir to locate the containing .git directory.
+ */
+export function findGitRoot(startDir: string): string | null {
+  let current = path.resolve(startDir);
+  while (true) {
+    if (fs.existsSync(path.join(current, '.git'))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return null;
+}
+
 export class FsSource implements SourceAdapter {
   private readonly postsRoot: string;
   private readonly repoRoot?: string;
+  private readonly repoUrl?: string;
+  private readonly gitRemote?: string;
+  private readonly gitBranch?: string;
   private readonly layout: 'bundle' | 'flat';
   private readonly gitPull: boolean;
   private readonly siteUrl: string;
@@ -102,6 +123,9 @@ export class FsSource implements SourceAdapter {
   constructor(options: FsSourceOptions) {
     this.postsRoot = path.resolve(options.postsRoot);
     this.repoRoot = options.repoRoot ? path.resolve(options.repoRoot) : undefined;
+    this.repoUrl = options.repoUrl ? options.repoUrl.trim() : undefined;
+    this.gitRemote = options.gitRemote ? options.gitRemote.trim() : undefined;
+    this.gitBranch = options.gitBranch ? options.gitBranch.trim() : undefined;
     this.layout = options.layout || 'bundle';
     this.gitPull = Boolean(options.gitPull);
     this.siteUrl = (options.siteUrl || 'https://blog.srprolin.com').replace(/\/+$/, '');
@@ -118,18 +142,53 @@ export class FsSource implements SourceAdapter {
   }
 
   /**
-   * Optional pre-run hook to pull latest git commits.
+   * Optional pre-run hook to pull latest git commits from the chosen repository.
    */
   public async prepare(): Promise<void> {
-    if (!this.gitPull || !this.repoRoot) return;
+    if (!this.gitPull) return;
+
+    let targetDir = this.repoRoot;
+
+    // 1. If repoUrl is configured and target directory does not exist, clone it first
+    if (this.repoUrl && targetDir && !fs.existsSync(targetDir)) {
+      try {
+        console.log(`[Git] 正在从远程克隆仓库: ${this.repoUrl} -> ${targetDir} ...`);
+        const cloneArgs = ['clone', this.repoUrl, targetDir];
+        if (this.gitBranch) {
+          cloneArgs.push('-b', this.gitBranch);
+        }
+        await execFileAsync('git', cloneArgs, { timeout: 60_000 });
+      } catch (err: any) {
+        throw new Error(`[FsSource] git clone ${this.repoUrl} 失败: ${err.message}`);
+      }
+    }
+
+    // 2. If repoRoot was not explicitly set, auto-detect by walking up from postsRoot to find .git
+    if (!targetDir) {
+      targetDir = findGitRoot(this.postsRoot) || undefined;
+    }
+
+    if (!targetDir || !fs.existsSync(targetDir)) {
+      throw new Error(
+        `[FsSource] 开启了 gitPull，但在文章目录 ${this.postsRoot} 所在路径未找到 .git 仓库，且未在配置中指定 repoRoot`
+      );
+    }
 
     try {
-      await execFileAsync('git', ['pull', '--ff-only'], {
-        cwd: this.repoRoot,
-        timeout: 20_000,
+      const pullArgs = ['pull', '--ff-only'];
+      if (this.gitRemote) {
+        pullArgs.push(this.gitRemote);
+        if (this.gitBranch) {
+          pullArgs.push(this.gitBranch);
+        }
+      }
+      console.log(`[Git] 正在拉取博客仓库更新: ${targetDir} (${pullArgs.join(' ')}) ...`);
+      await execFileAsync('git', pullArgs, {
+        cwd: targetDir,
+        timeout: 30_000,
       });
     } catch (err: any) {
-      throw new Error(`[FsSource] git pull failed in ${this.repoRoot}: ${err.message}`);
+      throw new Error(`[FsSource] 在仓库目录 ${targetDir} 执行 git pull 失败: ${err.message}`);
     }
   }
 

@@ -35,6 +35,11 @@ function printUsage() {
 
 通用选项:
   -c, --config <path>     指定配置文件路径 (默认: ./config.yaml)
+  --pull                  强制执行 git pull 拉取博客仓库更新
+  --no-pull               强制跳过 git pull
+  --repo <path>           指定/切换要 pull 的本地 Git 博客仓库路径（留空则自动从 postsRoot 寻找 .git）
+  --posts <path>          指定/切换博客文章所在目录 (如: /path/to/blog/content/posts)
+  --branch <name>         指定 pull 的 Git 分支名 (默认: main 或当前分支)
   -i, --select            进入交互式文章选择推送模式
   --filter <keyword>      交互式选择时按关键词过滤文章 (匹配 slug 或标题)
   --include-updated       在 sync 时破例把修改过的历史文章也纳入自动推送
@@ -44,6 +49,18 @@ function printUsage() {
   -t, --theme <id>        指定渲染主题 ID (如: tech-blue, fullstack-blue, klein)
   -h, --help              显示此帮助信息
 `);
+}
+
+function loadConfigWithOverrides(configPath?: string, values?: any) {
+  const config = loadConfig(configPath);
+  if (!values) return config;
+
+  if (values.pull) config.source.gitPull = true;
+  if (values['no-pull']) config.source.gitPull = false;
+  if (values.repo) config.source.repoRoot = path.resolve(values.repo);
+  if (values.posts) config.source.postsRoot = path.resolve(values.posts);
+  if (values.branch) config.source.gitBranch = String(values.branch).trim();
+  return config;
 }
 
 async function runDiagnose(configPath?: string) {
@@ -87,9 +104,9 @@ async function runDiagnose(configPath?: string) {
   }
 }
 
-async function runCheck(configPath?: string) {
+async function runCheck(configPath?: string, cliValues?: any) {
   printBanner();
-  const config = loadConfig(configPath);
+  const config = loadConfigWithOverrides(configPath, cliValues);
   const pipeline = new SyncPipeline(config);
 
   console.log(`正在扫描博客目录: ${config.source.postsRoot} ...\n`);
@@ -139,10 +156,11 @@ async function runBaseline(
     beforeDate?: string;
     onlySlugs?: string[];
     pullRemoteDrafts?: boolean;
-  } = {}
+  } = {},
+  cliValues?: any
 ) {
   printBanner();
-  const config = loadConfig(configPath);
+  const config = loadConfigWithOverrides(configPath, cliValues);
   const pipeline = new SyncPipeline(config);
 
   if (options.pullRemoteDrafts) {
@@ -165,9 +183,9 @@ async function runBaseline(
   console.log(`  后续运行 sync 时将只自动同步新发表的文章。\n`);
 }
 
-async function runPreview(slug: string, configPath?: string, output?: string, themeId?: string) {
+async function runPreview(slug: string, configPath?: string, output?: string, themeId?: string, cliValues?: any) {
   printBanner();
-  const config = loadConfig(configPath);
+  const config = loadConfigWithOverrides(configPath, cliValues);
   if (themeId) {
     config.render.theme = themeId;
   }
@@ -274,10 +292,11 @@ async function promptInteractiveSelection(
 async function runPush(
   slugs: string[],
   configPath?: string,
-  options: { dryRun?: boolean; force?: boolean; interactive?: boolean; filter?: string } = {}
+  options: { dryRun?: boolean; force?: boolean; interactive?: boolean; filter?: string } = {},
+  cliValues?: any
 ) {
   printBanner();
-  const config = loadConfig(configPath);
+  const config = loadConfigWithOverrides(configPath, cliValues);
   const client = new WeChatClient({
     appId: config.wechat.appId,
     appSecret: config.wechat.appSecret,
@@ -330,9 +349,9 @@ async function runPush(
   }
 }
 
-async function runSync(configPath?: string, dryRun = false, includeUpdated = false) {
+async function runSync(configPath?: string, dryRun = false, includeUpdated = false, cliValues?: any) {
   printBanner();
-  const config = loadConfig(configPath);
+  const config = loadConfigWithOverrides(configPath, cliValues);
   const client = new WeChatClient({
     appId: config.wechat.appId,
     appSecret: config.wechat.appSecret,
@@ -413,6 +432,11 @@ async function main() {
       remote: { type: 'boolean' },
       except: { type: 'string' },
       before: { type: 'string' },
+      pull: { type: 'boolean' },
+      'no-pull': { type: 'boolean' },
+      repo: { type: 'string' },
+      posts: { type: 'string' },
+      branch: { type: 'string' },
       'dry-run': { type: 'boolean' },
       force: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
@@ -428,16 +452,20 @@ async function main() {
       break;
 
     case 'check':
-      await runCheck(configPath);
+      await runCheck(configPath, parsed.values);
       break;
 
     case 'baseline':
-      await runBaseline(configPath, {
-        exceptSlug: parsed.values.except,
-        beforeDate: parsed.values.before,
-        onlySlugs: parsed.positionals.length > 0 ? parsed.positionals : undefined,
-        pullRemoteDrafts: parsed.values.remote,
-      });
+      await runBaseline(
+        configPath,
+        {
+          exceptSlug: parsed.values.except,
+          beforeDate: parsed.values.before,
+          onlySlugs: parsed.positionals.length > 0 ? parsed.positionals : undefined,
+          pullRemoteDrafts: parsed.values.remote,
+        },
+        parsed.values
+      );
       break;
 
     case 'preview': {
@@ -446,22 +474,27 @@ async function main() {
         console.error('错误: 请指定要预览的文章 slug，例如: md2wechat preview 45-immortalwrt-1\n');
         process.exit(1);
       }
-      await runPreview(slug, configPath, parsed.values.output, parsed.values.theme);
+      await runPreview(slug, configPath, parsed.values.output, parsed.values.theme, parsed.values);
       break;
     }
 
     case 'push': {
-      await runPush(parsed.positionals, configPath, {
-        dryRun: parsed.values['dry-run'],
-        force: parsed.values.force,
-        interactive: parsed.values.select,
-        filter: parsed.values.filter,
-      });
+      await runPush(
+        parsed.positionals,
+        configPath,
+        {
+          dryRun: parsed.values['dry-run'],
+          force: parsed.values.force,
+          interactive: parsed.values.select,
+          filter: parsed.values.filter,
+        },
+        parsed.values
+      );
       break;
     }
 
     case 'sync':
-      await runSync(configPath, parsed.values['dry-run'], parsed.values['include-updated']);
+      await runSync(configPath, parsed.values['dry-run'], parsed.values['include-updated'], parsed.values);
       break;
 
     case 'themes':

@@ -81,7 +81,10 @@ export function loadConfig(configPath?: string): AppConfig {
   const appSecret = process.env.WECHAT_SECRET || parsed.wechat?.appSecret || '';
 
   const rawPostsRoot = parsed.source?.postsRoot || parsed.source?.root || '../SrP-BloG/content/posts';
-  const rawRepoRoot = parsed.source?.repoRoot || '../SrP-BloG';
+  const rawRepoRoot = parsed.source?.repoRoot;
+  const rawRepoUrl = parsed.source?.repoUrl;
+  const rawGitRemote = parsed.source?.gitRemote || parsed.source?.remote || 'origin';
+  const rawGitBranch = parsed.source?.gitBranch || parsed.source?.branch;
   const rawStateFile = parsed.sync?.stateFile || './state.json';
   const rawDefaultCover = parsed.sync?.defaultCover;
   const rawAssetRoots: string[] = Array.isArray(parsed.source?.assetRoots)
@@ -91,7 +94,10 @@ export function loadConfig(configPath?: string): AppConfig {
   return {
     source: {
       postsRoot: resolveConfigRelativePath(rawPostsRoot, configDir),
-      repoRoot: resolveConfigRelativePath(rawRepoRoot, configDir),
+      repoRoot: rawRepoRoot ? resolveConfigRelativePath(rawRepoRoot, configDir) : undefined,
+      repoUrl: rawRepoUrl ? String(rawRepoUrl).trim() : undefined,
+      gitRemote: rawGitRemote ? String(rawGitRemote).trim() : undefined,
+      gitBranch: rawGitBranch ? String(rawGitBranch).trim() : undefined,
       layout: parsed.source?.layout || 'bundle',
       assetRoots: rawAssetRoots.map((r) => resolveConfigRelativePath(String(r), configDir)),
       gitPull: Boolean(parsed.source?.gitPull),

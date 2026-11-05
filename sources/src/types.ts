@@ -27,7 +27,10 @@ export interface FieldMapping {
 
 export interface FsSourceOptions {
   postsRoot: string;
-  repoRoot?: string;
+  repoRoot?: string;              // 显式指定的 Git 仓库目录（留空则从 postsRoot 自动向上寻根 .git）
+  repoUrl?: string;               // 远程 Git 仓库 URL（可选，若本地目录不存在可自动 clone）
+  gitRemote?: string;             // 远端名称，默认 'origin'
+  gitBranch?: string;             // 目标分支，默认 'main' 或当前分支
   layout?: 'bundle' | 'flat';     // default: 'bundle' (slug/index.md)
   assetRoots?: string[];          // default: ['{postDir}']
   gitPull?: boolean;              // default: false

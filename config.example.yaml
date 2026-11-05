@@ -4,8 +4,14 @@ source:
   type: fs
   # 博客 content/posts 目录的相对路径或绝对路径
   postsRoot: ../SrP-BloG/content/posts
-  # 博客仓库根目录（可选，若开启 gitPull 则在此目录下执行 git pull --ff-only）
-  repoRoot: ../SrP-BloG
+  # 博客 Git 仓库根目录（可选。若开启 gitPull 且此处留空，则自动从 postsRoot 向上探查包含 .git 的目录）
+  repoRoot: ""
+  # 远程 Git 仓库克隆地址（可选。若本地未克隆，首次运行自动 git clone）
+  repoUrl: ""
+  # Git 远端名称（可选，默认: origin）
+  gitRemote: "origin"
+  # Git 目标分支（可选，默认当前分支或 main）
+  gitBranch: "main"
   # bundle 表示每篇文章为一个目录 (<slug>/index.md)；flat 表示 posts/xxx.md
   layout: bundle
   # 静态资源查找根目录（按顺序匹配，{postDir} 代表当前文章所在目录）
