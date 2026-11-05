@@ -141,8 +141,8 @@ test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> 
       })
     );
 
-  const countBaselined = await makePipeline().baseline();
-  assert.equal(countBaselined, 1);
+  const { baselinedCount } = await makePipeline().baseline();
+  assert.equal(baselinedCount, 1);
 
   // Sync right after baseline -> 0 API calls
   const syncAfterBaseline = await makePipeline().sync();

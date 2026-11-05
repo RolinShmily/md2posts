@@ -61,7 +61,8 @@ md2wechat/
 ├── renderer/                      # @md2wechat/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
 ├── sources/                       # @md2wechat/sources：文件系统文章源适配器 + 复合 SHA-256 计算
 ├── sync-core/                     # @md2wechat/sync-core：sharp 图片处理、进程锁状态存储、同步流水线与 Webhook 通知
-├── cli/                           # @md2wechat/cli：命令行入口与 systemd 定时部署单元
+├── cli/                           # @md2wechat/cli：命令行入口
+├── systemd/                       # systemd 定时服务单元与一键安装脚本
 └── config.example.yaml            # 完整配置文件模板
 ```
 
@@ -116,8 +117,10 @@ node cli/dist/index.js preview 45-immortalwrt-1
 node cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
 
 # 4. 建立历史文章基线（首次启用前运行，跳过存量老文章）
-node cli/dist/index.js baseline
-node cli/dist/index.js baseline --except 61-cf-tunnel-vps
+node cli/dist/index.js baseline                              # 将全部现有已发布文章设为基线
+node cli/dist/index.js baseline 45-immortalwrt-1 53-qt6-1    # 仅将指定的某几篇设为基线
+node cli/dist/index.js baseline --except 61-cf-tunnel-vps    # 除指定文章外全部设为基线
+node cli/dist/index.js baseline --remote                     # 设为基线并从微信草稿箱拉取现有草稿自动绑定 draftMediaId
 
 # 5. 手动或交互式选择文章推送到草稿箱
 node cli/dist/index.js push                         # 进入交互式列表勾选
@@ -153,7 +156,7 @@ pnpm install --ignore-scripts && pnpm build
 node cli/dist/index.js baseline
 
 # 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库与 node 路径）
-bash cli/deploy/install-systemd.sh
+bash systemd/install-systemd.sh
 
 # 3. 写入公众号密钥（权限已设为 600）
 sudo nano /etc/md2wechat/wechat.env

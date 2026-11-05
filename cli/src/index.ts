@@ -134,15 +134,23 @@ async function runCheck(configPath?: string) {
 
 async function runBaseline(
   configPath?: string,
-  options: { exceptSlug?: string; beforeDate?: string } = {}
+  options: {
+    exceptSlug?: string;
+    beforeDate?: string;
+    onlySlugs?: string[];
+    pullRemoteDrafts?: boolean;
+  } = {}
 ) {
   printBanner();
   const config = loadConfig(configPath);
   const pipeline = new SyncPipeline(config);
 
   console.log(`正在为现有文章建立基准（baseline）...`);
-  const count = await pipeline.baseline(options);
-  console.log(`✓ 成功将 ${count} 篇已发布文章标记为基线！`);
+  const res = await pipeline.baseline(options);
+  console.log(`✓ 成功将 ${res.baselinedCount} 篇已发布文章标记为基线！`);
+  if (options.pullRemoteDrafts) {
+    console.log(`✓ 已从公众号后台拉取草稿箱并自动匹配绑定了 ${res.matchedRemoteCount} 篇现有草稿 (draftMediaId)！`);
+  }
   console.log(`  状态已写入: ${config.sync.stateFile}`);
   console.log(`  后续运行 sync 时将只自动同步新发表的文章。\n`);
 }
@@ -392,6 +400,7 @@ async function main() {
       select: { type: 'boolean', short: 'i' },
       filter: { type: 'string' },
       'include-updated': { type: 'boolean' },
+      remote: { type: 'boolean' },
       except: { type: 'string' },
       before: { type: 'string' },
       'dry-run': { type: 'boolean' },
@@ -416,6 +425,8 @@ async function main() {
       await runBaseline(configPath, {
         exceptSlug: parsed.values.except,
         beforeDate: parsed.values.before,
+        onlySlugs: parsed.positionals.length > 0 ? parsed.positionals : undefined,
+        pullRemoteDrafts: parsed.values.remote,
       });
       break;
 

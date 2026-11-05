@@ -62,7 +62,8 @@ md2wechat/
 ├── renderer/                      # @md2wechat/renderer: Vendored md-wechat engine + AST-aware preprocessor
 ├── sources/                       # @md2wechat/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
 ├── sync-core/                     # @md2wechat/sync-core: Image processor (sharp), lockfile state store, pipeline & webhook notifier
-├── cli/                           # @md2wechat/cli: CLI entry point & systemd timer deployment units
+├── cli/                           # @md2wechat/cli: CLI entry point
+├── systemd/                       # systemd service, timer & one-step installer script
 └── config.example.yaml            # Full configuration template
 ```
 
@@ -115,9 +116,11 @@ node cli/dist/index.js check
 node cli/dist/index.js preview 45-immortalwrt-1
 node cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
 
-# 4. Mark all existing published posts as baselined (skip historical posts on routine auto-sync)
-node cli/dist/index.js baseline
-node cli/dist/index.js baseline --except 61-cf-tunnel-vps
+# 4. Mark existing published posts as baselined (skip historical posts on routine auto-sync)
+node cli/dist/index.js baseline                              # Baseline all existing published posts
+node cli/dist/index.js baseline 45-immortalwrt-1 53-qt6-1    # Baseline specific posts only
+node cli/dist/index.js baseline --except 61-cf-tunnel-vps    # Baseline all except specified post(s)
+node cli/dist/index.js baseline --remote                     # Baseline & pull existing WeChat Draft Box media_ids into state.json
 
 # 5. Interactive or targeted push to WeChat Draft Box
 node cli/dist/index.js push                         # Interactive numbered picker
@@ -153,7 +156,7 @@ pnpm install --ignore-scripts && pnpm build
 node cli/dist/index.js baseline
 
 # 2. Install and enable the systemd service & timer
-bash cli/deploy/install-systemd.sh
+bash systemd/install-systemd.sh
 
 # 3. Add your WeChat credentials (permissions: 0600)
 sudo nano /etc/md2wechat/wechat.env

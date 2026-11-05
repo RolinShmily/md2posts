@@ -177,16 +177,37 @@ export class SyncPipeline {
 
   /**
    * Marks existing posts as baselined so they won't be pushed on routine runs.
+   * When `pullRemoteDrafts` is true, also fetches existing drafts from WeChat (`draft/batchget`),
+   * matches them by `content_source_url` or title, and records their `draftMediaId` as `synced`.
    */
-  public async baseline(options: { beforeDate?: string; exceptSlug?: string } = {}): Promise<number> {
+  public async baseline(
+    options: {
+      beforeDate?: string;
+      exceptSlug?: string;
+      onlySlugs?: string[];
+      pullRemoteDrafts?: boolean;
+    } = {}
+  ): Promise<{ baselinedCount: number; matchedRemoteCount: number }> {
     return await this.stateStore.withLock(async () => {
       await this.prepare();
       const posts = await this.source.scanPosts();
+      const exceptSet = new Set(
+        (options.exceptSlug || '')
+          .split(/[\s,]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      );
+      const onlySet =
+        options.onlySlugs && options.onlySlugs.length > 0
+          ? new Set(options.onlySlugs)
+          : null;
+
       const toBaseline: Array<{ id: string; title: string; contentHash: string }> = [];
 
       for (const post of posts) {
         if (post.draft) continue;
-        if (options.exceptSlug && post.id === options.exceptSlug) continue;
+        if (exceptSet.has(post.id)) continue;
+        if (onlySet && !onlySet.has(post.id)) continue;
         if (options.beforeDate && post.publishedAt && post.publishedAt >= options.beforeDate) continue;
 
         toBaseline.push({
@@ -197,7 +218,56 @@ export class SyncPipeline {
       }
 
       this.stateStore.markBaseline(toBaseline);
-      return toBaseline.length;
+
+      let matchedRemoteCount = 0;
+      if (options.pullRemoteDrafts) {
+        let offset = 0;
+        const pageSize = 20;
+        const now = new Date().toISOString();
+
+        while (true) {
+          const batch = await this.wechatClient.draft.batchGet(offset, pageSize, 1);
+          const items = batch.item || [];
+          if (items.length === 0) break;
+
+          for (const draftItem of items) {
+            const mediaId = draftItem.media_id;
+            const newsItem = draftItem.content?.news_item?.[0];
+            if (!mediaId || !newsItem) continue;
+
+            const remoteUrl = (newsItem.content_source_url || '').trim();
+            const remoteTitle = (newsItem.title || '').trim();
+
+            const matchedPost = posts.find((p) => {
+              if (p.draft) return false;
+              if (remoteUrl && (remoteUrl === p.canonicalUrl || remoteUrl.includes(`/posts/${p.id}`))) {
+                return true;
+              }
+              const normTitle = normalizeWeChatTitle(p.title).title;
+              return remoteTitle === p.title || remoteTitle === normTitle;
+            });
+
+            if (matchedPost) {
+              this.stateStore.setPost(matchedPost.id, {
+                contentHash: matchedPost.contentHash,
+                title: matchedPost.title,
+                draftMediaId: mediaId,
+                status: 'synced',
+                pushedAt: now,
+              });
+              matchedRemoteCount++;
+            }
+          }
+
+          offset += items.length;
+          if (offset >= (batch.total_count || 0) || items.length < pageSize) {
+            break;
+          }
+        }
+        this.stateStore.save();
+      }
+
+      return { baselinedCount: toBaseline.length, matchedRemoteCount };
     });
   }
 
