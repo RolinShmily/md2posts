@@ -10,6 +10,7 @@ import type {
   MaterialBatchGetResult,
   PublishSubmitResult,
   PublishStatusResult,
+  PublishBatchGetResult,
 } from './endpoints/draft.js';
 
 export interface WeChatClientOptions {
@@ -371,6 +372,14 @@ export class WeChatClient {
         '/cgi-bin/freepublish/get',
         { publish_id: publishId },
         '查询发布状态'
+      );
+    },
+
+    batchGet: async (offset = 0, count = 20, noContent: 0 | 1 = 1): Promise<PublishBatchGetResult> => {
+      return await this.post<PublishBatchGetResult>(
+        '/cgi-bin/freepublish/batchget',
+        { offset, count, no_content: noContent },
+        '批量获取已发表文章列表'
       );
     },
   };

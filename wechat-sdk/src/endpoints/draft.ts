@@ -64,3 +64,18 @@ export interface PublishStatusResult {
   article_id?: string;
   fail_idx?: number[];
 }
+
+export interface PublishBatchGetItem {
+  article_id: string;
+  update_time: number;
+  content: {
+    news_item: DraftArticleDetail[];
+  };
+}
+
+export interface PublishBatchGetResult {
+  total_count: number;
+  item_count: number;
+  item: PublishBatchGetItem[];
+}
+

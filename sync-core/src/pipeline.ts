@@ -177,8 +177,9 @@ export class SyncPipeline {
 
   /**
    * Marks existing posts as baselined so they won't be pushed on routine runs.
-   * When `pullRemoteDrafts` is true, also fetches existing drafts from WeChat (`draft/batchget`),
-   * matches them by `content_source_url` or title, and records their `draftMediaId` as `synced`.
+   * When `pullRemoteDrafts` is true, ONLY fetches existing drafts (`draft/batchget`) and
+   * published articles (`freepublish/batchget`) from WeChat, matches them against local posts
+   * by `content_source_url` or title, and writes the matched entries into `state.json`.
    */
   public async baseline(
     options: {
@@ -187,10 +188,115 @@ export class SyncPipeline {
       onlySlugs?: string[];
       pullRemoteDrafts?: boolean;
     } = {}
-  ): Promise<{ baselinedCount: number; matchedRemoteCount: number }> {
+  ): Promise<{
+    baselinedCount: number;
+    matchedDraftCount: number;
+    matchedPublishedCount: number;
+    publishListUnauthorized: boolean;
+  }> {
     return await this.stateStore.withLock(async () => {
       await this.prepare();
       const posts = await this.source.scanPosts();
+
+      const matchLocalPost = (remoteUrl?: string, remoteTitle?: string): SourcePost | undefined => {
+        const cleanUrl = (remoteUrl || '').trim();
+        const cleanTitle = (remoteTitle || '').trim();
+        return posts.find((p) => {
+          if (p.draft) return false;
+          if (cleanUrl && (cleanUrl === p.canonicalUrl || cleanUrl.includes(`/posts/${p.id}`))) {
+            return true;
+          }
+          if (!cleanTitle) return false;
+          const normTitle = normalizeWeChatTitle(p.title).title;
+          return cleanTitle === p.title || cleanTitle === normTitle;
+        });
+      };
+
+      if (options.pullRemoteDrafts) {
+        let matchedDraftCount = 0;
+        let matchedPublishedCount = 0;
+        let publishListUnauthorized = false;
+        const pageSize = 20;
+        const now = new Date().toISOString();
+
+        // 1. Fetch from WeChat Draft Box (cgi-bin/draft/batchget)
+        let draftOffset = 0;
+        while (true) {
+          const batch = await this.wechatClient.draft.batchGet(draftOffset, pageSize, 1);
+          const items = batch.item || [];
+          if (items.length === 0) break;
+
+          for (const draftItem of items) {
+            const mediaId = draftItem.media_id;
+            const newsItem = draftItem.content?.news_item?.[0];
+            if (!mediaId || !newsItem) continue;
+
+            const matchedPost = matchLocalPost(newsItem.content_source_url, newsItem.title);
+            if (matchedPost) {
+              this.stateStore.setPost(matchedPost.id, {
+                contentHash: matchedPost.contentHash,
+                title: matchedPost.title,
+                draftMediaId: mediaId,
+                status: 'synced',
+                pushedAt: now,
+              });
+              matchedDraftCount++;
+            }
+          }
+
+          draftOffset += items.length;
+          if (draftOffset >= (batch.total_count || 0) || items.length < pageSize) {
+            break;
+          }
+        }
+
+        // 2. Also attempt to fetch from WeChat Published Articles (cgi-bin/freepublish/batchget)
+        try {
+          let pubOffset = 0;
+          while (true) {
+            const batch = await this.wechatClient.publish.batchGet(pubOffset, pageSize, 1);
+            const items = batch.item || [];
+            if (items.length === 0) break;
+
+            for (const pubItem of items) {
+              const newsItem = pubItem.content?.news_item?.[0];
+              if (!newsItem) continue;
+
+              const matchedPost = matchLocalPost(newsItem.content_source_url, newsItem.title);
+              if (matchedPost && !this.stateStore.getPost(matchedPost.id)) {
+                this.stateStore.setPost(matchedPost.id, {
+                  contentHash: matchedPost.contentHash,
+                  title: matchedPost.title,
+                  status: 'synced',
+                  pushedAt: now,
+                });
+                matchedPublishedCount++;
+              }
+            }
+
+            pubOffset += items.length;
+            if (pubOffset >= (batch.total_count || 0) || items.length < pageSize) {
+              break;
+            }
+          }
+        } catch (err: any) {
+          if (err instanceof WeChatError && err.isUnauthorized()) {
+            publishListUnauthorized = true;
+          } else {
+            throw err;
+          }
+        }
+
+        this.stateStore.save();
+        return {
+          baselinedCount: 0,
+          matchedDraftCount,
+          matchedPublishedCount,
+          publishListUnauthorized,
+        };
+      }
+
+      // Offline baseline mode: mark selected/all local posts as baselined
       const exceptSet = new Set(
         (options.exceptSlug || '')
           .split(/[\s,]+/)
@@ -218,56 +324,12 @@ export class SyncPipeline {
       }
 
       this.stateStore.markBaseline(toBaseline);
-
-      let matchedRemoteCount = 0;
-      if (options.pullRemoteDrafts) {
-        let offset = 0;
-        const pageSize = 20;
-        const now = new Date().toISOString();
-
-        while (true) {
-          const batch = await this.wechatClient.draft.batchGet(offset, pageSize, 1);
-          const items = batch.item || [];
-          if (items.length === 0) break;
-
-          for (const draftItem of items) {
-            const mediaId = draftItem.media_id;
-            const newsItem = draftItem.content?.news_item?.[0];
-            if (!mediaId || !newsItem) continue;
-
-            const remoteUrl = (newsItem.content_source_url || '').trim();
-            const remoteTitle = (newsItem.title || '').trim();
-
-            const matchedPost = posts.find((p) => {
-              if (p.draft) return false;
-              if (remoteUrl && (remoteUrl === p.canonicalUrl || remoteUrl.includes(`/posts/${p.id}`))) {
-                return true;
-              }
-              const normTitle = normalizeWeChatTitle(p.title).title;
-              return remoteTitle === p.title || remoteTitle === normTitle;
-            });
-
-            if (matchedPost) {
-              this.stateStore.setPost(matchedPost.id, {
-                contentHash: matchedPost.contentHash,
-                title: matchedPost.title,
-                draftMediaId: mediaId,
-                status: 'synced',
-                pushedAt: now,
-              });
-              matchedRemoteCount++;
-            }
-          }
-
-          offset += items.length;
-          if (offset >= (batch.total_count || 0) || items.length < pageSize) {
-            break;
-          }
-        }
-        this.stateStore.save();
-      }
-
-      return { baselinedCount: toBaseline.length, matchedRemoteCount };
+      return {
+        baselinedCount: toBaseline.length,
+        matchedDraftCount: 0,
+        matchedPublishedCount: 0,
+        publishListUnauthorized: false,
+      };
     });
   }
 

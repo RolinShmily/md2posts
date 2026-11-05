@@ -145,12 +145,22 @@ async function runBaseline(
   const config = loadConfig(configPath);
   const pipeline = new SyncPipeline(config);
 
-  console.log(`正在为现有文章建立基准（baseline）...`);
+  if (options.pullRemoteDrafts) {
+    console.log(`正在从微信公众号后台拉取「草稿箱」与「已发表列表」并匹配本地文章...`);
+    const res = await pipeline.baseline(options);
+    console.log(`✓ 草稿箱匹配成功并绑定 draftMediaId: ${res.matchedDraftCount} 篇`);
+    if (res.publishListUnauthorized) {
+      console.log(`ℹ️  已发表列表接口 (freepublish/batchget) 返回 48001（个人号不支持查询已发表列表，已自动跳过；已发表过的老文章可通过 \`baseline <slug1> <slug2>\` 手动标记）`);
+    } else {
+      console.log(`✓ 已发表列表匹配成功:               ${res.matchedPublishedCount} 篇`);
+    }
+    console.log(`  状态已写入: ${config.sync.stateFile}\n`);
+    return;
+  }
+
+  console.log(`正在为本地文章建立基准（baseline）...`);
   const res = await pipeline.baseline(options);
   console.log(`✓ 成功将 ${res.baselinedCount} 篇已发布文章标记为基线！`);
-  if (options.pullRemoteDrafts) {
-    console.log(`✓ 已从公众号后台拉取草稿箱并自动匹配绑定了 ${res.matchedRemoteCount} 篇现有草稿 (draftMediaId)！`);
-  }
   console.log(`  状态已写入: ${config.sync.stateFile}`);
   console.log(`  后续运行 sync 时将只自动同步新发表的文章。\n`);
 }
