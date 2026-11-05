@@ -1,0 +1,25 @@
+{
+  "name": "@md2wechat/cli",
+  "version": "0.1.0",
+  "description": "CLI interface for md2wechat sync tool",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "md2wechat": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@md2wechat/renderer": "workspace:*",
+    "@md2wechat/sources": "workspace:*",
+    "@md2wechat/sync-core": "workspace:*",
+    "@md2wechat/wechat-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

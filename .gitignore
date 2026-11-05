@@ -1,0 +1,14 @@
+node_modules
+dist
+out
+*.tsbuildinfo
+.cache
+.env
+.env.local
+config.yaml
+.DS_Store
+*.log
+.token-cache.json
+state.json
+*.lock
+preview-*.html

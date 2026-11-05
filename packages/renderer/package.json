@@ -1,0 +1,28 @@
+{
+  "name": "@md2wechat/renderer",
+  "version": "0.1.0",
+  "description": "Vendored and adapted md-wechat renderer with full preprocessing pipeline",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "markdown-it-mark": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

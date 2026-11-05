@@ -1,0 +1,67 @@
+# md2wechat 配置文件
+
+source:
+  type: fs
+  # 博客 content/posts 目录的相对路径或绝对路径
+  postsRoot: ../SrP-BloG/content/posts
+  # 博客仓库根目录（可选，若开启 gitPull 则在此目录下执行 git pull --ff-only）
+  repoRoot: ../SrP-BloG
+  # bundle 表示每篇文章为一个目录 (<slug>/index.md)；flat 表示 posts/xxx.md
+  layout: bundle
+  # 静态资源查找根目录（按顺序匹配，{postDir} 代表当前文章所在目录）
+  assetRoots:
+    - "{postDir}"
+    - "../SrP-BloG/public"
+  # 定时任务执行前是否先执行 git pull --ff-only
+  gitPull: false
+
+site:
+  url: "https://blog.srprolin.com"
+  postPath: "/posts/{slug}/"
+  author: "RoL1n_SrP"
+  license: "CC BY-NC-SA 4.0"
+
+render:
+  # 内置 28 套主题之一 (运行 md2wechat themes 可查看全部清单)
+  # 推荐: tech-blue (科技蓝), fullstack-blue (全栈蓝), klein (克莱因蓝)
+  theme: "tech-blue"
+  # 主色调覆盖（留空则使用主题默认主色）
+  # 例如设置为博客同款粉色: "#f75c7e"
+  accent: ""
+  fontSize: 15
+  fontFamily: "theme"
+  macCode: true
+  galleryMode: "stack"
+  linksToFootnotes: true
+  shiftBodyHeadings: true
+  imageCaptionMode: "smart"
+  insertHeaderCover: false
+  appendCopyrightCard: true
+
+sync:
+  # 同步状态存储路径 (存放在博客仓库外，记录已同步文章哈希与图片微信URL缓存)
+  stateFile: "./state.json"
+  # 单次同步推送的最大文章数量（防止首次或大批量修改超出微信调用限制）
+  maxPerRun: 5
+  # 定时 sync 时是否自动将已修改的老文章也重新推送到草稿箱（默认 false：sync 只推新文章，老文章修改后由人工通过 push 选择推送）
+  syncUpdated: false
+  # 兜底封面图路径（当文章无 frontmatter 封面且正文无本地图片时使用）
+  defaultCover: "./assets/default-cover.png"
+  # 是否自动下载 jsDelivr 等外链图片转传至微信（防防盗链失效）
+  downloadRemoteImages: true
+  # 是否开启草稿评论 (0 关闭, 1 开启)
+  openComment: 0
+  # 是否仅粉丝可评论 (0 所有人, 1 仅粉丝)
+  onlyFansCanComment: 0
+
+wechat:
+  # 建议通过环境变量 WECHAT_APPID 与 WECHAT_SECRET 传入，此处留空
+  appId: ""
+  appSecret: ""
+
+notify:
+  # 可选：同步成功或失败时的 Webhook 通知地址（自动兼容飞书/企微/钉钉/通用 JSON，也可通过 MD2WECHAT_WEBHOOK_URL 环境变量设置）
+  webhookUrl: ""
+  onSuccess: true
+  onFailure: true
+
