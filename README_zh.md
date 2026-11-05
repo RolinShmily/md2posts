@@ -43,7 +43,7 @@
   - 使用 `sharp` 将 `.webp` 转为 `.png`/`.jpg`（透明通道转 JPG 自动填白底防黑底），并对超过 900KB 的大图（如 5MB+ 截图）按四级阶梯自适应压缩至 900KB 以内，彻底规避微信 `media/uploadimg` 的 1MB 上限（`45001`）。
   - 自动下载 jsDelivr 等外链图片并上传至微信图床，防止外链图被微信后台过滤。
   - **SHA-256 前置缓存**：在处理或下载前先比对 `state.json` 缓存，已上传过的图片与封面直接复用微信 `mmbiz.qpic.cn` 地址与 `media_id`（零 `sharp` 开销、零重复上传）。
-  - **三级封面兜底**：优先取 frontmatter `image` → 若为空自动取文章目录下第一张配图 → 若仍无配图则使用内置默认封面 `./assets/default-cover.png`。
+  - **三级封面兜底**：优先取 frontmatter `image` → 若为空自动取文章目录下第一张配图 → 若仍无配图则使用 `config.yaml` 中配置的 `sync.defaultCover`。
 - **微信字段合规裁剪与草稿自愈**：
   - **标题（≤ 32 字）**：超长时优先按 `|` 从右向左逐段剥离副标签，仍超长则安全截断加 `…`（防 `45003`）。
   - **摘要（≤ 120 字）**：超长自动截断加 `…`（防 `45004`）。
@@ -57,17 +57,12 @@
 
 ```text
 md2wechat/
-├── assets/
-│   └── default-cover.png          # 内置默认兜底封面图
-├── config.example.yaml            # 完整配置文件模板
-├── docs/
-│   └── ARCHITECTURE.md            # 仓库勘察报告与技术架构文档
-└── packages/
-    ├── wechat-sdk/                # @md2wechat/wechat-sdk：零外部依赖的纯微信 API SDK
-    ├── renderer/                  # @md2wechat/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
-    ├── sources/                   # @md2wechat/sources：文件系统文章源适配器 + 复合 SHA-256 计算
-    ├── sync-core/                 # @md2wechat/sync-core：sharp 图片处理、进程锁状态存储、同步流水线与 Webhook 通知
-    └── cli/                       # @md2wechat/cli：命令行入口与 systemd 定时部署单元
+├── wechat-sdk/                    # @md2wechat/wechat-sdk：零外部依赖的纯微信 API SDK
+├── renderer/                      # @md2wechat/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
+├── sources/                       # @md2wechat/sources：文件系统文章源适配器 + 复合 SHA-256 计算
+├── sync-core/                     # @md2wechat/sync-core：sharp 图片处理、进程锁状态存储、同步流水线与 Webhook 通知
+├── cli/                           # @md2wechat/cli：命令行入口与 systemd 定时部署单元
+└── config.example.yaml            # 完整配置文件模板
 ```
 
 ---
@@ -96,7 +91,7 @@ export WECHAT_SECRET="你的AppSecret"
 ### 3. 运行微信权限与 IP 白名单诊断
 
 ```bash
-node packages/cli/dist/index.js diagnose
+node cli/dist/index.js diagnose
 ```
 
 诊断命令将依次验证：
@@ -110,30 +105,30 @@ node packages/cli/dist/index.js diagnose
 
 ```bash
 # 1. 查看内置的 28 套公众号排版主题
-node packages/cli/dist/index.js themes
+node cli/dist/index.js themes
 
 # 2. 离线扫描与状态检查（零微信网络请求）
 # 区分展示【新增待自动同步】与【历史文章已修改（可手动选推）】
-node packages/cli/dist/index.js check
+node cli/dist/index.js check
 
 # 3. 本地离线排版预览（生成带「一键复制富文本」按钮的独立 HTML）
-node packages/cli/dist/index.js preview 45-immortalwrt-1
-node packages/cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
+node cli/dist/index.js preview 45-immortalwrt-1
+node cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
 
 # 4. 建立历史文章基线（首次启用前运行，跳过存量老文章）
-node packages/cli/dist/index.js baseline
-node packages/cli/dist/index.js baseline --except 61-cf-tunnel-vps
+node cli/dist/index.js baseline
+node cli/dist/index.js baseline --except 61-cf-tunnel-vps
 
 # 5. 手动或交互式选择文章推送到草稿箱
-node packages/cli/dist/index.js push                         # 进入交互式列表勾选
-node packages/cli/dist/index.js push --filter openwrt        # 按关键词筛选后勾选
-node packages/cli/dist/index.js push 61-cf-tunnel-vps        # 指定推送单篇
-node packages/cli/dist/index.js push 60-aria2-1 61-cf-tunnel-vps  # 一次指定多篇批量推送
-node packages/cli/dist/index.js push 45-immortalwrt-1 --dry-run   # 模拟演练模式（不发真实写请求）
+node cli/dist/index.js push                         # 进入交互式列表勾选
+node cli/dist/index.js push --filter openwrt        # 按关键词筛选后勾选
+node cli/dist/index.js push 61-cf-tunnel-vps        # 指定推送单篇
+node cli/dist/index.js push 60-aria2-1 61-cf-tunnel-vps  # 一次指定多篇批量推送
+node cli/dist/index.js push 45-immortalwrt-1 --dry-run   # 模拟演练模式（不发真实写请求）
 
 # 6. 自动增量同步（默认仅推送【新发表文章】，忽略老文章修改）
-node packages/cli/dist/index.js sync
-node packages/cli/dist/index.js sync --include-updated       # 破例将修改过的老文章也一并同步
+node cli/dist/index.js sync
+node cli/dist/index.js sync --include-updated       # 破例将修改过的老文章也一并同步
 ```
 
 ### 交互式勾选输入语法（`md2wechat push`）
@@ -155,10 +150,10 @@ node packages/cli/dist/index.js sync --include-updated       # 破例将修改�
 # 1. 构建并归档存量历史文章
 pnpm install --ignore-scripts && pnpm build
 # 在 config.yaml 中将 source.gitPull 设为 true（每次运行前自动 git pull --ff-only）
-node packages/cli/dist/index.js baseline
+node cli/dist/index.js baseline
 
 # 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库与 node 路径）
-bash packages/cli/deploy/install-systemd.sh
+bash cli/deploy/install-systemd.sh
 
 # 3. 写入公众号密钥（权限已设为 600）
 sudo nano /etc/md2wechat/wechat.env
@@ -174,5 +169,5 @@ journalctl -u md2wechat-sync.service -n 50 -f
 
 ## 致谢与许可
 
-- 排版渲染核心（`packages/renderer/vendor/`）移植自 [laogou717/md-wechat](https://github.com/laogou717/md-wechat)（MIT 许可证）。
+- 排版渲染核心（`renderer/vendor/`）移植自 [laogou717/md-wechat](https://github.com/laogou717/md-wechat)（MIT 许可证）。
 - 本项目基于 MIT 许可证开源。

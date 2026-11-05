@@ -18,7 +18,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  packages/cli:
+  cli:
     dependencies:
       '@md2wechat/renderer':
         specifier: workspace:*
@@ -40,7 +40,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  packages/renderer:
+  renderer:
     dependencies:
       highlight.js:
         specifier: ^11.11.1
@@ -62,7 +62,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  packages/sources:
+  sources:
     dependencies:
       yaml:
         specifier: ^2.7.0
@@ -75,7 +75,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  packages/sync-core:
+  sync-core:
     dependencies:
       '@md2wechat/renderer':
         specifier: workspace:*
@@ -100,7 +100,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  packages/wechat-sdk:
+  wechat-sdk:
     devDependencies:
       '@types/node':
         specifier: ^22.13.4

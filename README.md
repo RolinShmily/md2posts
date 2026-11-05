@@ -44,7 +44,7 @@
   - Converts `.webp` images to `.png` / `.jpg` via `sharp`, fills white backgrounds when flattening alpha channels to JPEG, and adaptively compresses large screenshots (>1 MB, up to 5+ MB) to `< 900 KB` to comply with WeChat's `media/uploadimg` limit.
   - Downloads and re-uploads external HTTP(S) images (`cdn.jsdelivr.net`, etc.) so they are not stripped by WeChat's sanitizer.
   - Pre-checks raw file SHA-256 against `state.json` before invoking `sharp` or network requests—cached images and covers require zero CPU or network overhead.
-  - **3-Tier Cover Fallback**: Uses frontmatter cover (`image`) → falls back to the first local image in the post bundle → falls back to the built-in default cover (`./assets/default-cover.png`).
+  - **3-Tier Cover Fallback**: Uses frontmatter cover (`image`) → falls back to the first local image in the post bundle → falls back to the configured `sync.defaultCover` in `config.yaml`.
 - **WeChat Payload Normalization & Self-Healing**:
   - Automatically trims long titles (`> 32` characters) by stripping trailing `| tag` segments from right to left before falling back to ellipsis truncation (`45003` prevention).
   - Truncates summaries exceeding `120` characters (`45004` prevention).
@@ -58,17 +58,12 @@
 
 ```text
 md2wechat/
-├── assets/
-│   └── default-cover.png          # Built-in fallback cover image
-├── config.example.yaml            # Full configuration template
-├── docs/
-│   └── ARCHITECTURE.md            # Reconnaissance report & technical architecture
-└── packages/
-    ├── wechat-sdk/                # @md2wechat/wechat-sdk: Zero-dependency WeChat Official Account API SDK
-    ├── renderer/                  # @md2wechat/renderer: Vendored md-wechat engine + AST-aware preprocessor
-    ├── sources/                   # @md2wechat/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
-    ├── sync-core/                 # @md2wechat/sync-core: Image processor (sharp), lockfile state store, pipeline & webhook notifier
-    └── cli/                       # @md2wechat/cli: CLI entry point & systemd timer deployment units
+├── wechat-sdk/                    # @md2wechat/wechat-sdk: Zero-dependency WeChat Official Account API SDK
+├── renderer/                      # @md2wechat/renderer: Vendored md-wechat engine + AST-aware preprocessor
+├── sources/                       # @md2wechat/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
+├── sync-core/                     # @md2wechat/sync-core: Image processor (sharp), lockfile state store, pipeline & webhook notifier
+├── cli/                           # @md2wechat/cli: CLI entry point & systemd timer deployment units
+└── config.example.yaml            # Full configuration template
 ```
 
 ---
@@ -99,7 +94,7 @@ export WECHAT_SECRET="your_appsecret"
 Verify credentials, server egress IP whitelist status, and Draft Box API permissions (`draft/count`):
 
 ```bash
-node packages/cli/dist/index.js diagnose
+node cli/dist/index.js diagnose
 ```
 
 > If your server IP is not yet whitelisted, `diagnose` extracts and prints the exact egress IP reported by WeChat (`40164`) so you can add it in the WeChat Official Account console under **Development -> Basic Configuration -> IP Whitelist**.
@@ -110,30 +105,30 @@ node packages/cli/dist/index.js diagnose
 
 ```bash
 # 1. List all 28 built-in WeChat typography themes
-node packages/cli/dist/index.js themes
+node cli/dist/index.js themes
 
 # 2. Offline status check (zero WeChat API calls)
 # Reports brand-new posts (queued for auto-sync) and modified historical posts (manual push)
-node packages/cli/dist/index.js check
+node cli/dist/index.js check
 
 # 3. Generate standalone local HTML preview with "One-Click Copy Rich Text" button
-node packages/cli/dist/index.js preview 45-immortalwrt-1
-node packages/cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
+node cli/dist/index.js preview 45-immortalwrt-1
+node cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
 
 # 4. Mark all existing published posts as baselined (skip historical posts on routine auto-sync)
-node packages/cli/dist/index.js baseline
-node packages/cli/dist/index.js baseline --except 61-cf-tunnel-vps
+node cli/dist/index.js baseline
+node cli/dist/index.js baseline --except 61-cf-tunnel-vps
 
 # 5. Interactive or targeted push to WeChat Draft Box
-node packages/cli/dist/index.js push                         # Interactive numbered picker
-node packages/cli/dist/index.js push --filter openwrt        # Interactive picker filtered by keyword
-node packages/cli/dist/index.js push 61-cf-tunnel-vps        # Push a single post
-node packages/cli/dist/index.js push 60-aria2-1 61-cf-tunnel-vps  # Push multiple posts in batch
-node packages/cli/dist/index.js push 45-immortalwrt-1 --dry-run   # Dry-run without calling WeChat write APIs
+node cli/dist/index.js push                         # Interactive numbered picker
+node cli/dist/index.js push --filter openwrt        # Interactive picker filtered by keyword
+node cli/dist/index.js push 61-cf-tunnel-vps        # Push a single post
+node cli/dist/index.js push 60-aria2-1 61-cf-tunnel-vps  # Push multiple posts in batch
+node cli/dist/index.js push 45-immortalwrt-1 --dry-run   # Dry-run without calling WeChat write APIs
 
 # 6. Automated incremental sync (pushes brand-new posts only by default, up to maxPerRun)
-node packages/cli/dist/index.js sync
-node packages/cli/dist/index.js sync --include-updated       # Also sync modified historical posts
+node cli/dist/index.js sync
+node cli/dist/index.js sync --include-updated       # Also sync modified historical posts
 ```
 
 ### Interactive Selection Syntax (`md2wechat push`)
@@ -155,10 +150,10 @@ To run `md2wechat` unattended on a Linux VPS with a static whitelisted IP (polli
 # 1. Build and baseline historical posts
 pnpm install --ignore-scripts && pnpm build
 # Set source.gitPull: true in config.yaml so each run pulls the latest blog commits
-node packages/cli/dist/index.js baseline
+node cli/dist/index.js baseline
 
 # 2. Install and enable the systemd service & timer
-bash packages/cli/deploy/install-systemd.sh
+bash cli/deploy/install-systemd.sh
 
 # 3. Add your WeChat credentials (permissions: 0600)
 sudo nano /etc/md2wechat/wechat.env
@@ -174,5 +169,5 @@ Concurrency is guarded at two levels: Linux `flock` in the systemd unit and a PI
 
 ## Credits & License
 
-- Rendering engine (`packages/renderer/vendor/`) adapted from [laogou717/md-wechat](https://github.com/laogou717/md-wechat) under the MIT License.
+- Rendering engine (`renderer/vendor/`) adapted from [laogou717/md-wechat](https://github.com/laogou717/md-wechat) under the MIT License.
 - Licensed under the MIT License.

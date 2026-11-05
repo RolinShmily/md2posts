@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 自动检测当前项目根目录与 node/flock 路径，安装并启用 systemd 定时任务
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 NODE_BIN="$(command -v node || true)"
 FLOCK_BIN="$(command -v flock || echo /usr/bin/flock)"
 RUN_USER="${SUDO_USER:-$(whoami)}"
@@ -38,7 +38,7 @@ User=${RUN_USER}
 WorkingDirectory=${REPO_DIR}
 Environment="PATH=${NODE_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EnvironmentFile=-/etc/md2wechat/wechat.env
-ExecStart=${FLOCK_BIN} -n /tmp/md2wechat.lock ${NODE_BIN} ${REPO_DIR}/packages/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
+ExecStart=${FLOCK_BIN} -n /tmp/md2wechat.lock ${NODE_BIN} ${REPO_DIR}/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
 StandardOutput=journal
 StandardError=journal
 

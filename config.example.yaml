@@ -46,7 +46,7 @@ sync:
   # 定时 sync 时是否自动将已修改的老文章也重新推送到草稿箱（默认 false：sync 只推新文章，老文章修改后由人工通过 push 选择推送）
   syncUpdated: false
   # 兜底封面图路径（当文章无 frontmatter 封面且正文无本地图片时使用）
-  defaultCover: "./assets/default-cover.png"
+  defaultCover: "../SrP-BloG/public/og/og.png"
   # 是否自动下载 jsDelivr 等外链图片转传至微信（防防盗链失效）
   downloadRemoteImages: true
   # 是否开启草稿评论 (0 关闭, 1 开启)

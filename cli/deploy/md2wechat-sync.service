@@ -10,7 +10,7 @@ Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 # Load WeChat AppID and AppSecret securely (chmod 600)
 EnvironmentFile=-/etc/md2wechat/wechat.env
 # flock + built-in StateStore.withLock() dual protection against overlapping runs
-ExecStart=/usr/bin/flock -n /tmp/md2wechat.lock /usr/bin/node /opt/md2wechat/packages/cli/dist/index.js sync -c /opt/md2wechat/config.yaml
+ExecStart=/usr/bin/flock -n /tmp/md2wechat.lock /usr/bin/node /opt/md2wechat/cli/dist/index.js sync -c /opt/md2wechat/config.yaml
 StandardOutput=journal
 StandardError=journal
 

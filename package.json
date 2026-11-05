@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "cli": "node packages/cli/dist/index.js",
+    "cli": "node cli/dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
