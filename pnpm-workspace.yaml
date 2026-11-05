@@ -4,3 +4,7 @@ packages:
   - 'sources'
   - 'sync-core'
   - 'cli'
+
+ignoredBuiltDependencies:
+  - esbuild
+  - sharp
