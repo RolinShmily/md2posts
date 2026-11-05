@@ -5,6 +5,12 @@ packages:
   - 'sync-core'
   - 'cli'
 
-ignoredBuiltDependencies:
+strictDepBuilds: false
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+onlyBuiltDependencies:
   - esbuild
   - sharp
