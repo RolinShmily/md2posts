@@ -70,11 +70,17 @@ export function loadConfig(configPath?: string): AppConfig {
   const configDir = path.dirname(resolvedPath);
 
   let rawYaml = '';
+  let parsed: any = {};
   if (fs.existsSync(resolvedPath)) {
     rawYaml = fs.readFileSync(resolvedPath, 'utf8');
+    try {
+      parsed = YAML.parse(rawYaml) || {};
+    } catch (err: any) {
+      console.warn(`[配置警告] 配置文件 ${resolvedPath} 解析失败 (YAML 语法/缩进错误): ${err.message}`);
+      console.warn(`           建议重新执行 \`cp config.example.yaml config.yaml\` 进行重置。\n`);
+      parsed = {};
+    }
   }
-
-  const parsed = rawYaml ? YAML.parse(rawYaml) || {} : {};
 
   // Resolve environment variables for sensitive credentials
   const appId = process.env.WECHAT_APPID || parsed.wechat?.appId || '';
