@@ -151,7 +151,7 @@ export class FsSource implements SourceAdapter {
     }
 
     this.layout = options.layout || 'bundle';
-    this.siteUrl = (options.siteUrl || 'https://blog.srprolin.com').replace(/\/+$/, '');
+    this.siteUrl = (options.siteUrl || 'https://blog.example.com').replace(/\/+$/, '');
     this.postPathPattern = options.postPathPattern || '/posts/{slug}/';
 
     this.fieldMapping = {

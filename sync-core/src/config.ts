@@ -86,15 +86,11 @@ export function loadConfig(configPath?: string): AppConfig {
   const appId = process.env.WECHAT_APPID || parsed.wechat?.appId || '';
   const appSecret = process.env.WECHAT_SECRET || parsed.wechat?.appSecret || '';
 
-  const hasExplicitPostsRoot = Boolean(parsed.source?.postsRoot || parsed.source?.root);
-  const rawRepoUrl =
-    parsed.source?.repoUrl !== undefined
-      ? parsed.source.repoUrl
-      : (hasExplicitPostsRoot ? undefined : 'https://github.com/RolinShmily/SrP-BloG.git');
+  const rawRepoUrl = parsed.source?.repoUrl ? String(parsed.source.repoUrl).trim() : undefined;
   const rawGitRemote = parsed.source?.gitRemote || parsed.source?.remote || 'origin';
   const rawGitBranch = parsed.source?.gitBranch || parsed.source?.branch || 'main';
   const rawPostsPath = parsed.source?.postsPath || 'content/posts';
-  const rawGitPull = parsed.source?.gitPull !== false; // 默认 true (开启远程拉取)
+  const rawGitPull = Boolean(parsed.source?.gitPull ?? rawRepoUrl); // 若配置了 repoUrl 则默认开启拉取
   const rawPostsRoot = parsed.source?.postsRoot || parsed.source?.root;
   const rawRepoRoot = parsed.source?.repoRoot;
   const rawStateFile = parsed.sync?.stateFile || './state.json';
@@ -103,25 +99,27 @@ export function loadConfig(configPath?: string): AppConfig {
     ? parsed.source.assetRoots
     : ['{postDir}', '{repoRoot}/public'];
 
+  const siteUrl = (parsed.site?.url || 'https://blog.example.com').replace(/\/+$/, '');
+
   return {
     source: {
       postsRoot: rawPostsRoot ? resolveConfigRelativePath(rawPostsRoot, configDir) : undefined,
       postsPath: rawPostsPath,
       repoRoot: rawRepoRoot ? resolveConfigRelativePath(rawRepoRoot, configDir) : undefined,
-      repoUrl: rawRepoUrl ? String(rawRepoUrl).trim() : undefined,
+      repoUrl: rawRepoUrl,
       gitRemote: String(rawGitRemote).trim(),
       gitBranch: String(rawGitBranch).trim(),
       layout: parsed.source?.layout || 'bundle',
       assetRoots: rawAssetRoots.map((r) => resolveConfigRelativePath(String(r), configDir)),
       gitPull: rawGitPull,
-      siteUrl: parsed.site?.url || 'https://blog.srprolin.com',
+      siteUrl,
       postPathPattern: parsed.site?.postPath || '/posts/{slug}/',
       fieldMapping: parsed.fields || {},
     },
     site: {
-      url: parsed.site?.url || 'https://blog.srprolin.com',
+      url: siteUrl,
       postPath: parsed.site?.postPath || '/posts/{slug}/',
-      author: parsed.site?.author || 'RoL1n_SrP',
+      author: parsed.site?.author || 'Author',
       license: parsed.site?.license || 'CC BY-NC-SA 4.0',
     },
     render: {

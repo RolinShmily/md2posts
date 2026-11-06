@@ -1,22 +1,24 @@
-# md2wechat 配置文件
+# md2wechat 配置文件模板 (config.example.yaml)
 
 source:
   type: fs
-  # 远程博客 Git 仓库地址（默认从远程拉取，任何 VPS 均零配置开箱即用）
-  repoUrl: "https://github.com/RolinShmily/SrP-BloG.git"
+  # 远程博客 Git 仓库地址（支持 HTTPS 或 SSH，留空则仅读取本地文章目录）
+  repoUrl: "https://github.com/your-username/your-blog.git"
   # Git 远端名称（默认: origin）
   gitRemote: "origin"
   # Git 目标分支（默认: main）
   gitBranch: "main"
-  # 每次同步前自动从远程拉取最新提交（默认: true，自动远程拉取）
+  # 是否自动从远程拉取最新提交（默认: true）
   gitPull: true
-  # 仓库内文章相对路径（默认: content/posts）
+  # 自动拉取冷却周期（默认: 24h，一天内不重复拉取远程仓库，直接使用本地缓存）
+  pullInterval: "24h"
+  # 仓库内文章相对路径（默认: content/posts，Hugo 常用 content/posts，Hexo 常用 source/_posts）
   postsPath: "content/posts"
-  # 本地仓库缓存目录（可选，留空则自动缓存在 .cache/blog-repo，无需手动管理）
+  # 本地仓库嵌套缓存路径（可选，留空则自动缓存在 .cache/blog-repo，已加入 .gitignore 不污染外层）
   repoRoot: ""
-  # （可选）若希望直接使用本地已有文章目录，可取消下行注释指定本地路径：
-  # postsRoot: "../SrP-BloG/content/posts"
-  # bundle 表示每篇文章为一个目录 (<slug>/index.md)；flat 表示 posts/xxx.md
+  # （可选）若直接使用本地已有文章目录，可填入本地相对路径或绝对路径：
+  # postsRoot: "/path/to/blog/content/posts"
+  # 文章目录组织形式：bundle (<slug>/index.md) 或 flat (posts/<slug>.md)
   layout: bundle
   # 静态资源查找根目录（按顺序匹配，{postDir} 代表当前文章目录，{repoRoot} 代表博客仓库根目录）
   assetRoots:
@@ -24,40 +26,52 @@ source:
     - "{repoRoot}/public"
 
 site:
-  url: "https://blog.srprolin.com"
+  # 博客网站访问基础 URL（用于文末版权卡片与相对链接补全）
+  url: "https://blog.example.com"
+  # 文章 URL 路由规则（{slug} 将被替换为具体文章标识）
   postPath: "/posts/{slug}/"
-  author: "RoL1n_SrP"
+  # 文章默认署名作者
+  author: "YourName"
+  # 版权声明协议
   license: "CC BY-NC-SA 4.0"
 
 render:
-  # 内置 28 套主题之一 (运行 md2wechat themes 可查看全部清单)
+  # 内置 28 套公众号排版主题 (运行 md2wechat themes 可查看全部清单)
   # 推荐: tech-blue (科技蓝), fullstack-blue (全栈蓝), klein (克莱因蓝)
   theme: "tech-blue"
-  # 主色调覆盖（留空则使用主题默认主色）
-  # 例如设置为博客同款粉色: "#f75c7e"
+  # 主色调覆盖（留空则跟随主题默认主色，例如填: "#0e88eb"）
   accent: ""
+  # 正文字号 (px)
   fontSize: 15
+  # 字体方案: theme (跟随主题), sans (黑体), serif (宋体), rounded (圆体)
   fontFamily: "theme"
+  # 是否开启 Mac 风格代码块窗口
   macCode: true
+  # 图片画廊排版模式: stack (单列堆叠), grid (网格), collage (拼贴)
   galleryMode: "stack"
+  # 是否将非微信域名的外部链接自动转换为文末带编号的【参考资料】脚注
   linksToFootnotes: true
+  # 是否将正文 h1~h5 标题顺移为 h2~h6（防止章节标题与主题刊头居中大标题冲突）
   shiftBodyHeadings: true
+  # 图片图注模式: smart (智能过滤无意义截图名称), all (保留所有图注), none (不生成图注)
   imageCaptionMode: "smart"
+  # 是否在正文顶部额外插入一张封面大图
   insertHeaderCover: false
+  # 是否在正文末尾追加原文链接与版权说明卡片
   appendCopyrightCard: true
 
 sync:
-  # 同步状态存储路径 (存放在博客仓库外，记录已同步文章哈希与图片微信URL缓存)
+  # 同步状态文件保存路径（存放在博客仓库外，记录已同步文章哈希与已上传图片微信 URL）
   stateFile: "./state.json"
-  # 单次同步推送的最大文章数量（防止首次或大批量修改超出微信调用限制）
+  # 单次同步推送的最大文章数量（防止首次或批量同步超出微信 API 调用上限）
   maxPerRun: 5
-  # 定时 sync 时是否自动将已修改的老文章也重新推送到草稿箱（默认 false：sync 只推新文章，老文章修改后由人工通过 push 选择推送）
+  # 定时 sync 时是否自动将已修改的老文章也重新推送到草稿箱（默认 false: sync 只推新文章，老文章修改后由人工通过 push 选择推送）
   syncUpdated: false
-  # 兜底封面图路径（当文章无 frontmatter 封面且正文无本地图片时使用）
+  # 兜底封面图路径（当文章自身无封面且正文无图片时使用，留空则自动尝试读取 {repoRoot}/public/og/og.png）
   defaultCover: ""
-  # 是否自动下载 jsDelivr 等外链图片转传至微信（防防盗链失效）
+  # 是否自动下载 jsDelivr 等外链图片转传至微信（防防盗链过滤）
   downloadRemoteImages: true
-  # 是否开启草稿评论 (0 关闭, 1 开启)
+  # 是否开启草稿评论功能 (0 关闭, 1 开启)
   openComment: 0
   # 是否仅粉丝可评论 (0 所有人, 1 仅粉丝)
   onlyFansCanComment: 0
@@ -68,7 +82,7 @@ wechat:
   appSecret: ""
 
 notify:
-  # 可选：同步成功或失败时的 Webhook 通知地址（自动兼容飞书/企微/钉钉/通用 JSON，也可通过 MD2WECHAT_WEBHOOK_URL 环境变量设置）
+  # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON，也可通过 MD2WECHAT_WEBHOOK_URL 环境变量设置）
   webhookUrl: ""
   onSuccess: true
   onFailure: true

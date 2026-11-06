@@ -1,10 +1,12 @@
 [Unit]
-Description=Run md2wechat sync periodically
+Description=Run md2wechat sync periodically (Daily)
 After=network-online.target
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=10min
+# Run 5 minutes after system boot
+OnBootSec=5min
+# Run once every 24 hours (daily check)
+OnUnitActiveSec=24h
 Persistent=true
 
 [Install]

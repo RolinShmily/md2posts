@@ -84,7 +84,7 @@ export function preprocessMarkdown(
   options: PreprocessOptions = {}
 ): PreprocessResult {
   const {
-    siteUrl = 'https://blog.srprolin.com',
+    siteUrl = 'https://blog.example.com',
     postCanonicalUrl = '',
     shiftBodyHeadings = true,
     imageCaptionMode = 'smart',

@@ -5,7 +5,7 @@
 <div align="center">
 
 [![stars](https://img.shields.io/github/stars/RolinShmily/md2wechat.svg?style=flat&color=green)](https://github.com/RolinShmily/md2wechat)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
 
@@ -19,13 +19,13 @@
 
 ## 项目简介
 
-**md2wechat** 用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（首个落地对象为 [SrP-BloG](https://github.com/RolinShmily/SrP-BloG)，通过字段映射配置即可适配 Hugo、Hexo、Astro 等任意静态博客）自动渲染为微信公众号兼容的内联样式 HTML，并同步推送至**微信公众号草稿箱**（`cgi-bin/draft/*`），最后由人工在公众号后台确认发表。
+**md2wechat** 用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（通用适配 Hugo、Hexo、Astro、Next.js 等任意静态博客）自动渲染为微信公众号兼容的内联样式 HTML，并同步推送至**微信公众号草稿箱**（`cgi-bin/draft/*`），最后由人工在公众号后台确认发表。
 
 - **零侵入设计**：不修改、不污染博客源仓库的任何文件或 frontmatter 字段。所有同步状态、图片 SHA-256 缓存与配置均独立保存在外部。
-- **默认远程拉取（VPS 零门槛开箱即用）**：默认直接从远程 Git 博客仓库（默认 `https://github.com/RolinShmily/SrP-BloG.git`，可在 `config.yaml` 自由修改）拉取同步。首次运行自动 clone 到 `.cache/blog-repo`，后续每次自动执行 `git pull --ff-only` 同步最新提交，你在 VPS 上**完全无需手动事先克隆或维护博客仓库**！
+- **支持远程 Git 拉取与 24 小时冷却**：支持直接配置远程 Git 博客仓库地址（如 `https://github.com/your-username/your-blog.git`）。首次运行自动 clone 到 `.cache/blog-repo`，后续每天自动检测更新，内置 24 小时拉取冷却周期，彻底避免频繁拉取。
 - **内置 28 套公众号主题**：复用 [laogou717/md-wechat](https://github.com/laogou717/md-wechat) 渲染核心，列表采用微信安全的 `<section>` 结构（防嵌套列表被微信拍扁），代码块采用逐行块级 `<code>` + 内联高亮（防吞换行）。
 - **符合真实运营习惯的同步策略**：
-  - **定时自动同步 (`sync`)**：默认**只自动推送新发表的文章**。老文章在博客上的修修补补会被 `check` 检测到，但不会自动重推刷屏你的公众号草稿箱。
+  - **每日定时自动同步 (`sync`)**：默认**只自动推送新发表的文章**。老文章在博客上的修修补补会被 `check` 检测到，但不会自动重推刷屏你的公众号草稿箱。
   - **按需自选推送 (`push`)**：支持指定单篇、批量指定多篇，或直接进入**终端交互式勾选列表**，随时按序号、区间或关键词挑选文章推入草稿箱。
 
 ---
@@ -41,10 +41,10 @@
   - **数学公式防破版与告警**：自动保护行内 `$...$` 与块级 `$$...$$` 中的 `_` 和 `*` 不被误解析为斜体，并输出公式所在行号提示。
   - **外链转文末脚注**：非微信域名外链自动转为正文中带编号的角标并在文末生成【参考资料】，微信内链（`mp.weixin.qq.com`）保留直接点击。
 - **全自动图片与封面管线**：
-  - 使用 `sharp` 将 `.webp` 转为 `.png`/`.jpg`（透明通道转 JPG 自动填白底防黑底），并对超过 900KB 的大图（如 5MB+ 截图）按四级阶梯自适应压缩至 900KB 以内，彻底规避微信 `media/uploadimg` 的 1MB 上限（`45001`）。
-  - 自动下载 jsDelivr 等外链图片并上传至微信图床，防止外链图被微信后台过滤。
+  - 使用 `sharp` 将 `.webp` 转为 `.png`/`.jpg`（透明通道转 JPG 自动填白底防黑底），并对超过 900KB 的大图按四级阶梯自适应压缩至 900KB 以内，彻底规避微信 `media/uploadimg` 的 1MB 上限（`45001`）。
+  - 自动下载外部图片并上传至微信图床，防止外链图被微信后台过滤。
   - **SHA-256 前置缓存**：在处理或下载前先比对 `state.json` 缓存，已上传过的图片与封面直接复用微信 `mmbiz.qpic.cn` 地址与 `media_id`（零 `sharp` 开销、零重复上传）。
-  - **三级封面兜底**：优先取 frontmatter `image` → 若为空自动取文章目录下第一张配图 → 若仍无配图则使用 `config.yaml` 中配置的 `sync.defaultCover`。
+  - **三级封面兜底**：优先取 frontmatter `image` → 若为空自动取文章目录下第一张配图 → 若仍无配图则使用 `config.yaml` 中配置的 `sync.defaultCover` 或 `{repoRoot}/public/og/og.png`。
 - **微信字段合规裁剪与草稿自愈**：
   - **标题（≤ 32 字）**：超长时优先按 `|` 从右向左逐段剥离副标签，仍超长则安全截断加 `…`（防 `45003`）。
   - **摘要（≤ 120 字）**：超长自动截断加 `…`（防 `45004`）。
@@ -63,7 +63,7 @@ md2wechat/
 ├── sources/                       # @md2wechat/sources：文件系统文章源适配器 + 复合 SHA-256 计算
 ├── sync-core/                     # @md2wechat/sync-core：sharp 图片处理、进程锁状态存储、同步流水线与 Webhook 通知
 ├── cli/                           # @md2wechat/cli：命令行入口
-├── systemd/                       # systemd 定时服务单元与一键安装脚本
+├── systemd/                       # systemd 每日定时服务单元与一键安装脚本
 └── config.example.yaml            # 完整配置文件模板
 ```
 
@@ -73,19 +73,22 @@ md2wechat/
 
 ### 1. 安装、构建与测试
 
-环境要求：**Node.js >= 22**，**pnpm >= 10**。
+环境要求：**Node.js >= 20**，**pnpm >= 10**。
 
 ```bash
-pnpm install --ignore-scripts
+pnpm install
 pnpm build
 pnpm test
 ```
 
-### 2. 配置凭据
+### 2. 配置凭据与博客信息
 
-复制 `config.example.yaml` 为 `config.yaml`，并通过环境变量传入公众号密钥（切勿将密钥提交进代码库）：
+复制 `config.example.yaml` 为 `config.yaml`，填入你的博客仓库地址与网站信息，并通过环境变量传入公众号密钥（切勿将密钥提交进代码库）：
 
 ```bash
+cp config.example.yaml config.yaml
+nano config.yaml
+
 export WECHAT_APPID="wx_你的AppID"
 export WECHAT_SECRET="你的AppSecret"
 ```
@@ -114,25 +117,26 @@ node cli/dist/index.js themes
 node cli/dist/index.js check
 
 # 3. 本地离线排版预览（生成带「一键复制富文本」按钮的独立 HTML）
-node cli/dist/index.js preview 45-immortalwrt-1
-node cli/dist/index.js preview 45-immortalwrt-1 -t fullstack-blue -o ./preview.html
+node cli/dist/index.js preview my-post-slug
+node cli/dist/index.js preview my-post-slug -t fullstack-blue -o ./preview.html
 
 # 4. 建立历史文章基线（首次启用前运行，跳过存量老文章）
 node cli/dist/index.js baseline                              # 将全部现有已发布文章设为基线
-node cli/dist/index.js baseline 45-immortalwrt-1 53-qt6-1    # 仅将指定的某几篇设为基线
-node cli/dist/index.js baseline --except 61-cf-tunnel-vps    # 除指定文章外全部设为基线
+node cli/dist/index.js baseline post-1 post-2                # 仅将指定的某几篇设为基线
+node cli/dist/index.js baseline --except new-post-slug       # 除指定文章外全部设为基线
 node cli/dist/index.js baseline --remote                     # 设为基线并从微信草稿箱拉取现有草稿自动绑定 draftMediaId
 
 # 5. 手动或交互式选择文章推送到草稿箱
 node cli/dist/index.js push                         # 进入交互式列表勾选
-node cli/dist/index.js push --filter openwrt        # 按关键词筛选后勾选
-node cli/dist/index.js push 61-cf-tunnel-vps        # 指定推送单篇
-node cli/dist/index.js push 60-aria2-1 61-cf-tunnel-vps  # 一次指定多篇批量推送
-node cli/dist/index.js push 45-immortalwrt-1 --dry-run   # 模拟演练模式（不发真实写请求）
+node cli/dist/index.js push --filter tutorial       # 按关键词筛选后勾选
+node cli/dist/index.js push my-post-slug            # 指定推送单篇
+node cli/dist/index.js push post-1 post-2           # 一次指定多篇批量推送
+node cli/dist/index.js push my-post-slug --dry-run  # 模拟演练模式（不发真实写请求）
 
 # 6. 自动增量同步（默认仅推送【新发表文章】，忽略老文章修改）
 node cli/dist/index.js sync
 node cli/dist/index.js sync --include-updated       # 破例将修改过的老文章也一并同步
+node cli/dist/index.js sync --pull                  # 立即强制拉取远程博客仓库更新（绕过 24h 冷却）
 ```
 
 ### 交互式勾选输入语法（`md2wechat push`）
@@ -141,22 +145,21 @@ node cli/dist/index.js sync --include-updated       # 破例将修改过的老�
 - **单个或多个序号**：`1` 或 `1,3,5`
 - **序号区间**：`1-4`
 - **快捷指令**：`new`（全选新增文章）、`updated`（全选已修改文章）
-- **直接输入 Slug**：`45-immortalwrt-1`
+- **直接输入 Slug**：`my-post-slug`
 - **取消退出**：`q`
 
 ---
 
-## VPS 定时后台服务部署 (`systemd`)
+## VPS 每日定时后台服务部署 (`systemd`)
 
-在固定公网 IP（已加入公众号白名单）的 Linux VPS 上，可通过 `systemd timer` 每 10 分钟静默轮询一次，无需开放任何入站端口：
+在固定公网 IP（已加入公众号白名单）的 Linux VPS 上，可通过 `systemd timer` 每天定时运行一次（24 小时检查一次，无需开放任何入站端口）：
 
 ```bash
 # 1. 构建并归档存量历史文章
-pnpm install --ignore-scripts && pnpm build
-# 在 config.yaml 中将 source.gitPull 设为 true（每次运行前自动 git pull --ff-only）
+pnpm install && pnpm build
 node cli/dist/index.js baseline
 
-# 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库与 node 路径）
+# 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库与 node 路径，设置 24h 定时器）
 bash systemd/install-systemd.sh
 
 # 3. 写入公众号密钥（权限已设为 600）
