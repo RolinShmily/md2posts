@@ -86,15 +86,22 @@ export class SyncPipeline {
       });
   }
 
-  public async prepare(): Promise<void> {
-    await this.source.prepare?.();
+  public async prepare(options: { forcePull?: boolean } = {}): Promise<void> {
+    const lastPullAt = this.stateStore.getLastGitPullAt();
+    await this.source.prepare?.({
+      forcePull: options.forcePull,
+      lastPullAt,
+      onPullSuccess: (nowIso: string) => {
+        this.stateStore.setLastGitPullAt(nowIso);
+      },
+    });
   }
 
   /**
    * Dry-run inspects all posts and returns status breakdown without making external API calls.
    */
-  public async check(): Promise<CheckReport> {
-    await this.prepare();
+  public async check(options: { forcePull?: boolean } = {}): Promise<CheckReport> {
+    await this.prepare(options);
     const posts = await this.source.scanPosts();
     const items: CheckPostItem[] = [];
 
@@ -187,6 +194,7 @@ export class SyncPipeline {
       exceptSlug?: string;
       onlySlugs?: string[];
       pullRemoteDrafts?: boolean;
+      forcePull?: boolean;
     } = {}
   ): Promise<{
     baselinedCount: number;
@@ -195,7 +203,7 @@ export class SyncPipeline {
     publishListUnauthorized: boolean;
   }> {
     return await this.stateStore.withLock(async () => {
-      await this.prepare();
+      await this.prepare({ forcePull: options.forcePull });
       const posts = await this.source.scanPosts();
 
       const matchLocalPost = (remoteUrl?: string, remoteTitle?: string): SourcePost | undefined => {
@@ -665,9 +673,9 @@ export class SyncPipeline {
    * Synchronizes new articles (and optionally updated articles if includeUpdated is enabled) up to maxPerRun.
    * By default, only brand-new articles (!state) are pushed automatically.
    */
-  public async sync(options: { includeUpdated?: boolean } = {}): Promise<SyncReport> {
+  public async sync(options: { includeUpdated?: boolean; forcePull?: boolean } = {}): Promise<SyncReport> {
     return await this.stateStore.withLock(async () => {
-      await this.prepare();
+      await this.prepare({ forcePull: options.forcePull });
       const posts = await this.source.scanPosts();
       const shouldSyncUpdated = options.includeUpdated ?? this.config.sync.syncUpdated;
 

@@ -109,8 +109,8 @@ async function runCheck(configPath?: string, cliValues?: any) {
   const config = loadConfigWithOverrides(configPath, cliValues);
   const pipeline = new SyncPipeline(config);
 
+  const report = await pipeline.check({ forcePull: cliValues?.pull });
   console.log(`正在扫描博客目录: ${config.source.postsRoot} ...\n`);
-  const report = await pipeline.check();
 
   console.log('📊 扫描与状态统计:');
   console.log(`   - 文章总数:           ${report.total} 篇 (已发布: ${report.published}, 草稿: ${report.drafts})`);
@@ -156,6 +156,7 @@ async function runBaseline(
     beforeDate?: string;
     onlySlugs?: string[];
     pullRemoteDrafts?: boolean;
+    forcePull?: boolean;
   } = {},
   cliValues?: any
 ) {
@@ -364,7 +365,10 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
     `开始执行${dryRun ? '【模拟演练】' : ''}自动同步 (策略: ${modeDesc}, 单次上限: ${config.sync.maxPerRun} 篇)...`
   );
 
-  const report = await pipeline.sync({ includeUpdated: includeUpdated || undefined });
+  const report = await pipeline.sync({
+    includeUpdated: includeUpdated || undefined,
+    forcePull: cliValues?.pull,
+  });
 
   console.log('\n📊 同步完成报告:');
   console.log(`  - 扫描文章:         ${report.scanned} 篇`);
@@ -463,6 +467,7 @@ async function main() {
           beforeDate: parsed.values.before,
           onlySlugs: parsed.positionals.length > 0 ? parsed.positionals : undefined,
           pullRemoteDrafts: parsed.values.remote,
+          forcePull: parsed.values.pull,
         },
         parsed.values
       );

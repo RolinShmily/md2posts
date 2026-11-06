@@ -32,6 +32,7 @@ export interface FsSourceOptions {
   repoUrl?: string;               // 远程 Git 仓库 URL（默认远程拉取）
   gitRemote?: string;             // 远端名称，默认 'origin'
   gitBranch?: string;             // 目标分支，默认 'main' 或当前分支
+  pullInterval?: string | number; // 自动拉取冷却周期（如 '24h', '1d', 默认 '24h'，一天内不重复拉取）
   layout?: 'bundle' | 'flat';     // default: 'bundle' (slug/index.md)
   assetRoots?: string[];          // default: ['{postDir}', '{repoRoot}/public']
   gitPull?: boolean;              // default: true (默认从远程拉取最新更新)
@@ -40,8 +41,14 @@ export interface FsSourceOptions {
   fieldMapping?: FieldMapping;
 }
 
+export interface PrepareOptions {
+  forcePull?: boolean;
+  lastPullAt?: string;
+  onPullSuccess?: (nowIso: string) => void;
+}
+
 export interface SourceAdapter {
-  prepare?(): Promise<void>;
+  prepare?(options?: PrepareOptions): Promise<void>;
   scanPosts(): Promise<SourcePost[]>;
   getPost(id: string): Promise<SourcePost | null>;
 }

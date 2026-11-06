@@ -9,6 +9,7 @@ import type {
   SourcePost,
   FsSourceOptions,
   FieldMapping,
+  PrepareOptions,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -167,7 +168,7 @@ export class FsSource implements SourceAdapter {
    * Prepares the source repository before scanning.
    * If gitPull is enabled (default), ensures remote repository is cloned and pulled up to date.
    */
-  public async prepare(): Promise<void> {
+  public async prepare(options: PrepareOptions = {}): Promise<void> {
     if (!this.gitPull) return;
 
     let targetDir = this.repoRoot;

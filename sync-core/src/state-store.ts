@@ -24,6 +24,7 @@ export interface CoverCacheEntry {
 export interface SyncStateData {
   version: 1;
   baselineCreatedAt?: string;
+  lastGitPullAt?: string;
   posts: Record<string, PostSyncState>;
   images: Record<string, ImageCacheEntry>;
   covers: Record<string, CoverCacheEntry>;
@@ -142,6 +143,15 @@ export class StateStore {
     }
   }
 
+  public getLastGitPullAt(): string | undefined {
+    return this.data.lastGitPullAt;
+  }
+
+  public setLastGitPullAt(isoDate: string): void {
+    this.data.lastGitPullAt = isoDate;
+    this.save();
+  }
+
   public getPost(slug: string): PostSyncState | undefined {
     return this.data.posts[slug];
   }
@@ -217,6 +227,7 @@ export class StateStore {
       return {
         version: 1,
         baselineCreatedAt: parsed.baselineCreatedAt,
+        lastGitPullAt: parsed.lastGitPullAt,
         posts: parsed.posts || {},
         images: parsed.images || {},
         covers: parsed.covers || {},
