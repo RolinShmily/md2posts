@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { WeChatClient, WeChatError } from '@md2wechat/wechat-sdk';
-import { renderArticle, preprocessMarkdown } from '@md2wechat/renderer';
-import { FsSource, SourcePost, findGitRoot } from '@md2wechat/sources';
+import { WeChatClient, WeChatError } from '@md2posts/wechat-sdk';
+import { renderArticle, preprocessMarkdown } from '@md2posts/renderer';
+import { FsSource, SourcePost, findGitRoot } from '@md2posts/sources';
 import { StateStore } from './state-store.js';
 import { ImageProcessor, resolveLocalAssetPath } from './image-processor.js';
 import { normalizeWeChatTitle, normalizeWeChatDigest } from './normalize.js';

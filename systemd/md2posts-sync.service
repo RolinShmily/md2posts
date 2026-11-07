@@ -1,0 +1,16 @@
+[Unit]
+Description=md2posts sync service (Markdown to Multi-Platform Posts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/md2posts
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EnvironmentFile=-/etc/md2posts/md2posts.env
+ExecStart=/usr/bin/flock -n /tmp/md2posts.lock /usr/bin/node /opt/md2posts/cli/dist/index.js sync -c /opt/md2posts/config.yaml
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

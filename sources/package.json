@@ -1,5 +1,5 @@
 {
-  "name": "@md2wechat/sources",
+  "name": "@md2posts/sources",
   "version": "0.1.0",
   "description": "Article source adapters for md2wechat",
   "type": "module",

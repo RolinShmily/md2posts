@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
-import { WeChatClient, MemoryTokenStore } from '@md2wechat/wechat-sdk';
+import { WeChatClient, MemoryTokenStore } from '@md2posts/wechat-sdk';
 import { SyncPipeline, loadConfig, StateStore } from '../src/index.js';
 
 const PNG_1X1 = Buffer.from(

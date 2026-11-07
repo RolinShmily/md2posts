@@ -1,6 +1,6 @@
 <h1 align="center">md2wechat</h1>
 
-<h4 align="center">将 Markdown 静态博客文章自动排版并同步至微信公众号草稿箱的工具</h4>
+<h4 align="center">将 Markdown 静态博客文章自动排版并同步至多平台草稿箱（微信公众号 + 小黑盒 HeyBox）</h4>
 
 <div align="center">
 
@@ -19,8 +19,14 @@
 
 ## 项目简介
 
-**md2wechat** 用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（通用适配 Hugo、Hexo、Astro、Next.js 等任意静态博客）自动渲染为微信公众号兼容的内联样式 HTML，并同步推送至**微信公众号草稿箱**（`cgi-bin/draft/*`），最后由人工在公众号后台确认发表。
+**md2posts**（原 *md2wechat*）用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（通用适配 Hugo、Hexo、Astro、Next.js 等任意静态博客）自动渲染并同步推送至：
+1. **微信公众号草稿箱**（`cgi-bin/draft/*`，28 套内联样式主题、微信安全列表结构与块级代码）；
+2. **小黑盒（HeyBox）社区**（**代码块/表格自动转深色卡片图**防止手机端折行破版、16:9 封面自动裁切、CS2/Switch/MC 等专区与话题自动推断）。
 
+- **多平台分发支持（微信公众号 + 小黑盒）**：
+  - `--to wechat`（默认）：同步干净的内联 HTML 至微信公众号草稿箱；
+  - `--to heybox`：自动将代码块和表格渲染为高清深色 PNG 图片（彻底解决小黑盒 App 移动端代码折行排版错乱的顽疾），自动裁切 16:9 封面图，自动匹配游戏社区（CS2、Switch、Minecraft、Steam、PS5）和 `#话题#`，并一键推入小黑盒草稿箱或生成发布包；
+  - `--to all`：单次命令一键双端同步！
 - **零侵入设计**：不修改、不污染博客源仓库的任何文件或 frontmatter 字段。所有同步状态、图片 SHA-256 缓存与配置均独立保存在外部。
 - **支持远程 Git 拉取与 24 小时冷却**：支持直接配置远程 Git 博客仓库地址（如 `https://github.com/your-username/your-blog.git`）。首次运行自动 clone 到 `.cache/blog-repo`，后续每天自动检测更新，内置 24 小时拉取冷却周期，彻底避免频繁拉取。
 - **内置 28 套公众号主题**：复用 [laogou717/md-wechat](https://github.com/laogou717/md-wechat) 渲染核心，列表采用微信安全的 `<section>` 结构（防嵌套列表被微信拍扁），代码块采用逐行块级 `<code>` + 内联高亮（防吞换行）。
@@ -116,9 +122,9 @@ node cli/dist/index.js themes
 # 区分展示【新增待自动同步】与【历史文章已修改（可手动选推）】
 node cli/dist/index.js check
 
-# 3. 本地离线排版预览（生成带「一键复制富文本」按钮的独立 HTML）
-node cli/dist/index.js preview my-post-slug
-node cli/dist/index.js preview my-post-slug -t fullstack-blue -o ./preview.html
+# 3. 本地离线排版预览
+node cli/dist/index.js preview my-post-slug                               # 微信公众号 HTML 预览（带一键复制富文本）
+node cli/dist/index.js preview my-post-slug --to heybox                  # 小黑盒发布包预览（含代码转图与 16:9 封面）
 
 # 4. 建立历史文章基线（首次启用前运行，跳过存量老文章）
 node cli/dist/index.js baseline                              # 将全部现有已发布文章设为基线
@@ -127,11 +133,13 @@ node cli/dist/index.js baseline --except new-post-slug       # 除指定文章�
 node cli/dist/index.js baseline --remote                     # 设为基线并从微信草稿箱拉取现有草稿自动绑定 draftMediaId
 
 # 5. 手动或交互式选择文章推送到草稿箱
-node cli/dist/index.js push                         # 进入交互式列表勾选
-node cli/dist/index.js push --filter tutorial       # 按关键词筛选后勾选
-node cli/dist/index.js push my-post-slug            # 指定推送单篇
-node cli/dist/index.js push post-1 post-2           # 一次指定多篇批量推送
-node cli/dist/index.js push my-post-slug --dry-run  # 模拟演练模式（不发真实写请求）
+node cli/dist/index.js push                                 # 进入交互式列表勾选
+node cli/dist/index.js push --filter tutorial               # 按关键词筛选后勾选
+node cli/dist/index.js push my-post-slug                    # 推送单篇至微信草稿箱
+node cli/dist/index.js push my-post-slug --to heybox        # 推送/导出单篇至小黑盒
+node cli/dist/index.js push my-post-slug --to all           # 一键推送到微信 + 小黑盒
+node cli/dist/index.js push post-1 post-2                   # 一次指定多篇批量推送
+node cli/dist/index.js push my-post-slug --dry-run          # 模拟演练模式（不发真实写请求）
 
 # 6. 自动增量同步（默认仅推送【新发表文章】，忽略老文章修改）
 node cli/dist/index.js sync

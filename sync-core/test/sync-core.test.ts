@@ -13,7 +13,7 @@ import {
   ImageProcessor,
   loadConfig,
 } from '../src/index.js';
-import { WeChatClient, MemoryTokenStore } from '@md2wechat/wechat-sdk';
+import { WeChatClient, MemoryTokenStore } from '@md2posts/wechat-sdk';
 
 test('normalizeWeChatTitle strips suffix tags right-to-left and truncates when needed', () => {
   const res1 = normalizeWeChatTitle('短标题');

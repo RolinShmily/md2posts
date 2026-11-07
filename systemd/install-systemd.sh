@@ -19,16 +19,16 @@ echo "==> 项目目录: ${REPO_DIR}"
 echo "==> Node 路径: ${NODE_BIN}"
 echo "==> 运行用户: ${RUN_USER}"
 
-sudo mkdir -p /etc/md2wechat
-if [[ ! -f /etc/md2wechat/wechat.env ]]; then
-  sudo cp "${SCRIPT_DIR}/wechat.env.example" /etc/md2wechat/wechat.env
-  sudo chmod 600 /etc/md2wechat/wechat.env
-  echo "==> 已创建 /etc/md2wechat/wechat.env (权限 600)，请填入真实的 WECHAT_APPID 与 WECHAT_SECRET"
+sudo mkdir -p /etc/md2posts
+if [[ ! -f /etc/md2posts/md2posts.env ]]; then
+  sudo cp "${SCRIPT_DIR}/md2posts.env.example" /etc/md2posts/md2posts.env
+  sudo chmod 600 /etc/md2posts/md2posts.env
+  echo "==> 已创建 /etc/md2posts/md2posts.env (权限 600)，请填入公众号或相关平台的凭据"
 fi
 
-sudo tee /etc/systemd/system/md2wechat-sync.service >/dev/null <<EOF
+sudo tee /etc/systemd/system/md2posts-sync.service >/dev/null <<EOF
 [Unit]
-Description=md2wechat sync service (Markdown to WeChat Draft Box)
+Description=md2posts sync service (Markdown to Multi-Platform Posts)
 After=network-online.target
 Wants=network-online.target
 
@@ -37,8 +37,8 @@ Type=oneshot
 User=${RUN_USER}
 WorkingDirectory=${REPO_DIR}
 Environment="PATH=${NODE_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-EnvironmentFile=-/etc/md2wechat/wechat.env
-ExecStart=${FLOCK_BIN} -n /tmp/md2wechat.lock ${NODE_BIN} ${REPO_DIR}/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
+EnvironmentFile=-/etc/md2posts/md2posts.env
+ExecStart=${FLOCK_BIN} -n /tmp/md2posts.lock ${NODE_BIN} ${REPO_DIR}/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
 StandardOutput=journal
 StandardError=journal
 
@@ -46,13 +46,13 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-sudo cp "${SCRIPT_DIR}/md2wechat-sync.timer" /etc/systemd/system/md2wechat-sync.timer
+sudo cp "${SCRIPT_DIR}/md2posts-sync.timer" /etc/systemd/system/md2posts-sync.timer
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now md2wechat-sync.timer
+sudo systemctl enable --now md2posts-sync.timer
 
 echo ""
 echo "✓ systemd 定时服务已安装并启动！"
-echo "  - 查看定时器状态: systemctl status md2wechat-sync.timer"
-echo "  - 手动触发一次:   sudo systemctl start md2wechat-sync.service"
-echo "  - 查看运行日志:   journalctl -u md2wechat-sync.service -f"
+echo "  - 查看定时器状态: systemctl status md2posts-sync.timer"
+echo "  - 手动触发一次:   sudo systemctl start md2posts-sync.service"
+echo "  - 查看运行日志:   journalctl -u md2posts-sync.service -f"

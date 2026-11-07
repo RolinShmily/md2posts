@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import YAML from 'yaml';
-import type { FsSourceOptions } from '@md2wechat/sources';
+import type { FsSourceOptions } from '@md2posts/sources';
 
 export interface AppConfig {
   source: FsSourceOptions;

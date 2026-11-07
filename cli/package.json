@@ -1,11 +1,12 @@
 {
-  "name": "@md2wechat/cli",
+  "name": "@md2posts/cli",
   "version": "0.1.0",
-  "description": "CLI interface for md2wechat sync tool",
+  "description": "CLI interface for md2posts sync tool",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
+    "md2posts": "./dist/index.js",
     "md2wechat": "./dist/index.js"
   },
   "scripts": {
@@ -13,10 +14,10 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@md2wechat/renderer": "workspace:*",
-    "@md2wechat/sources": "workspace:*",
-    "@md2wechat/sync-core": "workspace:*",
-    "@md2wechat/wechat-sdk": "workspace:*"
+    "@md2posts/renderer": "workspace:*",
+    "@md2posts/sources": "workspace:*",
+    "@md2posts/sync-core": "workspace:*",
+    "@md2posts/wechat-sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",

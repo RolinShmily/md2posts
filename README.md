@@ -1,6 +1,6 @@
 <h1 align="center">md2wechat</h1>
 
-<h4 align="center">Automated Markdown static blog to WeChat Official Account Draft Box synchronization tool</h4>
+<h4 align="center">Automated Markdown static blog multi-platform formatter & sync tool (WeChat Draft Box + XiaoHeiHe / HeyBox)</h4>
 
 <div align="center">
 
@@ -19,8 +19,14 @@
 
 ## Overview
 
-**md2wechat** converts static blog posts written in Markdown + YAML frontmatter (compatible with Hugo, Hexo, Astro, Next.js, and other static site generators) into WeChat-compatible rich HTML with inline styles and synchronizes them to the **WeChat Official Account Draft Box** (`cgi-bin/draft/*`) for final human review and publication.
+**md2posts** (formerly *md2wechat*) converts static blog posts written in Markdown + YAML frontmatter (compatible with Hugo, Hexo, Astro, Next.js, and other static site generators) into platform-optimized rich formats and synchronizes them to:
+1. **WeChat Official Account Draft Box** (`cgi-bin/draft/*` with 28 inline styles, WeChat-safe section lists, and line-by-line code blocks)
+2. **XiaoHeiHe (HeyBox / 小黑盒)** (with automatic code-block/table-to-image conversion, 16:9 header banners, and game community metadata inference)
 
+- **Multi-Platform Publishing (WeChat + XiaoHeiHe)**:
+  - `--to wechat` (default): Synchronizes clean inline HTML to WeChat Official Account Draft Box.
+  - `--to heybox`: Automatically converts code blocks and tables into crisp dark-mode PNG image cards (preventing layout breaking on mobile devices), crops 16:9 header banners, infers gaming communities/hashtags (CS2, Switch, Minecraft, Steam, PS5), and exports/pushes drafts to XiaoHeiHe!
+  - `--to all`: Synchronizes both platforms in a single run.
 - **Non-Intrusive by Design**: Never modifies or pollutes the source blog repository. All sync states, SHA-256 asset caches, and configurations live outside the blog repository.
 - **Remote Git Pull with 24-Hour Cooldown**: Automatically pulls and syncs directly from your remote Git blog repository (e.g. `https://github.com/your-username/your-blog.git` in `config.yaml`). On first run it clones into `.cache/blog-repo`, and subsequently performs a daily check with 24-hour pull cooldown to prevent unnecessary Git traffic.
 - **28 Built-in WeChat Themes**: Powered by the vendored [laogou717/md-wechat](https://github.com/laogou717/md-wechat) rendering engine, outputting WeChat-safe `<section>` list structures and line-by-line `<code style="display:block">` blocks that survive WeChat's editor sanitizer.
@@ -116,9 +122,9 @@ node cli/dist/index.js themes
 # Reports brand-new posts (queued for auto-sync) and modified historical posts (manual push)
 node cli/dist/index.js check
 
-# 3. Generate standalone local HTML preview with "One-Click Copy Rich Text" button
-node cli/dist/index.js preview my-post-slug
-node cli/dist/index.js preview my-post-slug -t fullstack-blue -o ./preview.html
+# 3. Generate standalone local preview
+node cli/dist/index.js preview my-post-slug                               # WeChat HTML preview with one-click copy
+node cli/dist/index.js preview my-post-slug --to heybox                  # XiaoHeiHe bundle preview (code-to-image + 16:9 cover)
 
 # 4. Mark existing published posts as baselined (skip historical posts on routine auto-sync)
 node cli/dist/index.js baseline                              # Baseline all existing published posts
@@ -126,12 +132,14 @@ node cli/dist/index.js baseline post-1 post-2                # Baseline specific
 node cli/dist/index.js baseline --except new-post-slug       # Baseline all except specified post(s)
 node cli/dist/index.js baseline --remote                     # Baseline & pull existing WeChat Draft Box media_ids into state.json
 
-# 5. Interactive or targeted push to WeChat Draft Box
-node cli/dist/index.js push                         # Interactive numbered picker
-node cli/dist/index.js push --filter tutorial       # Interactive picker filtered by keyword
-node cli/dist/index.js push my-post-slug            # Push a single post
-node cli/dist/index.js push post-1 post-2           # Push multiple posts in batch
-node cli/dist/index.js push my-post-slug --dry-run  # Dry-run without calling WeChat write APIs
+# 5. Interactive or targeted push to Draft Box
+node cli/dist/index.js push                                 # Interactive numbered picker
+node cli/dist/index.js push --filter tutorial               # Interactive picker filtered by keyword
+node cli/dist/index.js push my-post-slug                    # Push a single post to WeChat
+node cli/dist/index.js push my-post-slug --to heybox        # Push/export to XiaoHeiHe
+node cli/dist/index.js push my-post-slug --to all           # Push to both WeChat & XiaoHeiHe
+node cli/dist/index.js push post-1 post-2                   # Push multiple posts in batch
+node cli/dist/index.js push my-post-slug --dry-run          # Dry-run without calling write APIs
 
 # 6. Automated incremental sync (pushes brand-new posts only by default, up to maxPerRun)
 node cli/dist/index.js sync

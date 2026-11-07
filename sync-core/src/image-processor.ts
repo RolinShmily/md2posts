@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
-import type { WeChatClient } from '@md2wechat/wechat-sdk';
-import { findGitRoot } from '@md2wechat/sources';
+import type { WeChatClient } from '@md2posts/wechat-sdk';
+import { findGitRoot } from '@md2posts/sources';
 import type { StateStore } from './state-store.js';
 
 export interface ProcessedImage {

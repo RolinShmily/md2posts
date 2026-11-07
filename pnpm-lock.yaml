@@ -20,16 +20,16 @@ importers:
 
   cli:
     dependencies:
-      '@md2wechat/renderer':
+      '@md2posts/renderer':
         specifier: workspace:*
         version: link:../renderer
-      '@md2wechat/sources':
+      '@md2posts/sources':
         specifier: workspace:*
         version: link:../sources
-      '@md2wechat/sync-core':
+      '@md2posts/sync-core':
         specifier: workspace:*
         version: link:../sync-core
-      '@md2wechat/wechat-sdk':
+      '@md2posts/wechat-sdk':
         specifier: workspace:*
         version: link:../wechat-sdk
     devDependencies:
@@ -77,13 +77,13 @@ importers:
 
   sync-core:
     dependencies:
-      '@md2wechat/renderer':
+      '@md2posts/renderer':
         specifier: workspace:*
         version: link:../renderer
-      '@md2wechat/sources':
+      '@md2posts/sources':
         specifier: workspace:*
         version: link:../sources
-      '@md2wechat/wechat-sdk':
+      '@md2posts/wechat-sdk':
         specifier: workspace:*
         version: link:../wechat-sdk
       sharp:

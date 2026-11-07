@@ -4,36 +4,40 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { parseArgs } from 'node:util';
-import { WeChatClient } from '@md2wechat/wechat-sdk';
-import { listThemes } from '@md2wechat/renderer';
+import { WeChatClient } from '@md2posts/wechat-sdk';
+import { listThemes } from '@md2posts/renderer';
+import { FsSource } from '@md2posts/sources';
 import {
   loadConfig,
   SyncPipeline,
+  HeyBoxPublisher,
   parseArticleSelection,
   CheckPostItem,
-} from '@md2wechat/sync-core';
+} from '@md2posts/sync-core';
 
 function printBanner() {
   console.log('╔════════════════════════════════════════════════════════════╗');
-  console.log('║       md2wechat - Markdown 博客 -> 微信公众号草稿同步工具   ║');
+  console.log('║       md2posts - Markdown 博客多平台排版与同步工具        ║');
+  console.log('║       支持: 微信公众号草稿箱 (WeChat) | 小黑盒 (HeyBox)    ║');
   console.log('╚════════════════════════════════════════════════════════════╝\n');
 }
 
 function printUsage() {
   printBanner();
   console.log(`用法:
-  md2wechat <command> [options]
+  md2posts <command> [options]
 
 命令:
   diagnose                微信 API 与出口 IP 白名单诊断（只读，不修改文件）
   check                   离线扫描博客：报告【新增待同步】与【已修改可手动推】文章（零微信请求）
   baseline                将当前已发布文章标记为基线，跳过历史文章自动推送
-  preview <slug>          离线渲染指定文章为独立 HTML 页面（可在浏览器打开或一键复制富文本）
-  push [slug1 slug2 ...]  推送文章到草稿箱（不传 slug 或加 -i 则进入交互式勾选列表）
+  preview <slug>          离线渲染指定文章为独立页面（支持 --to wechat 或 --to heybox）
+  push [slug1 slug2 ...]  推送文章到草稿箱（支持 --to wechat / heybox / all，不传 slug 进入勾选列表）
   sync                    自动增量同步【新文章】到草稿箱（默认忽略老文章修改，受 maxPerRun 限制）
   themes                  列出内置的 28 套精美主题
 
 通用选项:
+  --to <platform>         目标发布平台: wechat (默认) | heybox (小黑盒) | all (双端同步)
   -c, --config <path>     指定配置文件路径 (默认: ./config.yaml)
   --pull                  强制执行 git pull 拉取博客仓库更新
   --no-pull               强制跳过 git pull
@@ -45,7 +49,7 @@ function printUsage() {
   --include-updated       在 sync 时破例把修改过的历史文章也纳入自动推送
   --dry-run               开启演练模式，写接口不发真实请求
   --force                 强制新建草稿（跳过 update 原草稿尝试）
-  -o, --output <path>     指定 preview 输出文件路径
+  -o, --output <path>     指定 preview 输出文件或目录路径
   -t, --theme <id>        指定渲染主题 ID (如: tech-blue, fullstack-blue, klein)
   -h, --help              显示此帮助信息
 `);
@@ -187,6 +191,36 @@ async function runBaseline(
 async function runPreview(slug: string, configPath?: string, output?: string, themeId?: string, cliValues?: any) {
   printBanner();
   const config = loadConfigWithOverrides(configPath, cliValues);
+  const targetPlatform = (cliValues?.to || 'wechat').toLowerCase();
+
+  if (targetPlatform === 'heybox') {
+    const publisher = new HeyBoxPublisher(config);
+    const source = new FsSource(config.source);
+    await source.prepare?.();
+    const post = await source.getPost(slug);
+    if (!post) {
+      throw new Error(`[Pipeline] 未找到文章: ${slug}`);
+    }
+    const { bundleDir, prepared } = await publisher.exportPackage(post, output);
+    const codeImgCount = Array.from(prepared.assets.keys()).filter((k) =>
+      k.startsWith('assets/code_')
+    ).length;
+
+    console.log(`✓ 小黑盒专属发布包已生成！`);
+    console.log(`  发布包目录: ${bundleDir}`);
+    console.log(`  文章标题:   ${prepared.title}`);
+    console.log(
+      `  社区专区:   ${prepared.metadata.community}${
+        prepared.metadata.gameId ? ` (GameID: ${prepared.metadata.gameId})` : ''
+      }`
+    );
+    console.log(`  话题标签:   ${prepared.metadata.hashtags.map((h) => `#${h}#`).join(' ') || '无'}`);
+    console.log(`  代码块转图: ${codeImgCount} 张 (防止手机端排版打散)`);
+    console.log(`  16:9 封面:  ${prepared.coverBuffer ? '已裁切生成 (cover_16_9.jpg)' : '未找到封面'}`);
+    console.log(`\n💡 提示：双击打开 ${bundleDir}/preview.html 可预览小黑盒效果并一键复制稿件！\n`);
+    return;
+  }
+
   if (themeId) {
     config.render.theme = themeId;
   }
@@ -319,8 +353,12 @@ async function runPush(
     return;
   }
 
+  const targetPlatform = (cliValues?.to || 'wechat').toLowerCase();
+  const targetDesc =
+    targetPlatform === 'heybox' ? '小黑盒' : targetPlatform === 'all' ? '微信 + 小黑盒' : '微信草稿箱';
+
   console.log(
-    `\n准备${options.dryRun ? '【模拟演练】' : ''}推送 ${targetSlugs.length} 篇文章到微信草稿箱...\n`
+    `\n准备${options.dryRun ? '【模拟演练】' : ''}推送 ${targetSlugs.length} 篇文章到 [${targetDesc}]...\n`
   );
 
   let successCount = 0;
@@ -328,16 +366,33 @@ async function runPush(
 
   for (const slug of targetSlugs) {
     try {
-      console.log(`⏳ 正在推送 [${slug}] ...`);
-      const res = await pipeline.push(slug, { force: options.force });
-      successCount++;
-      console.log(`✓ [${res.id}] 推送成功！`);
-      console.log(`    微信标题:    ${res.normalizedTitle}`);
-      console.log(`    操作类型:    ${res.isUpdate ? '更新现有草稿' : '新建草稿'}`);
-      console.log(`    草稿MediaId: ${res.mediaId}`);
-      if (res.warnings.length > 0) {
-        console.log(`    ⚠️  排版提示 (${res.warnings.length} 条): ${res.warnings[0]}`);
+      console.log(`⏳ 正在处理 [${slug}] ...`);
+
+      // 1. WeChat Push
+      if (targetPlatform === 'wechat' || targetPlatform === 'all') {
+        const res = await pipeline.push(slug, { force: options.force });
+        console.log(`✓ [${res.id}] 微信公众号推送成功！`);
+        console.log(`    微信标题:    ${res.normalizedTitle}`);
+        console.log(`    操作类型:    ${res.isUpdate ? '更新现有草稿' : '新建草稿'}`);
+        console.log(`    草稿MediaId: ${res.mediaId}`);
+        if (res.warnings.length > 0) {
+          console.log(`    ⚠️  排版提示 (${res.warnings.length} 条): ${res.warnings[0]}`);
+        }
       }
+
+      // 2. HeyBox Push / Export
+      if (targetPlatform === 'heybox' || targetPlatform === 'all') {
+        const heyPublisher = new HeyBoxPublisher(config);
+        const source = new FsSource(config.source);
+        const post = await source.getPost(slug);
+        if (post) {
+          const heyRes = await heyPublisher.publishDraft(post, { dryRun: options.dryRun });
+          console.log(`✓ [${slug}] 小黑盒: ${heyRes.message}`);
+          console.log(`    发布包路径: ${heyRes.bundleDir}`);
+        }
+      }
+
+      successCount++;
       console.log('');
     } catch (err: any) {
       failCount++;
@@ -427,6 +482,7 @@ async function main() {
   const parsed = parseArgs({
     args: args.slice(1),
     options: {
+      to: { type: 'string' },
       config: { type: 'string', short: 'c' },
       output: { type: 'string', short: 'o' },
       theme: { type: 'string', short: 't' },

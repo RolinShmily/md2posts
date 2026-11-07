@@ -1,7 +1,7 @@
 {
-  "name": "@md2wechat/sync-core",
+  "name": "@md2posts/sync-core",
   "version": "0.1.0",
-  "description": "Synchronization pipeline, state management, and image processing for md2wechat",
+  "description": "Synchronization pipeline, state management, and image processing for md2posts",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,9 +16,9 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@md2wechat/renderer": "workspace:*",
-    "@md2wechat/sources": "workspace:*",
-    "@md2wechat/wechat-sdk": "workspace:*",
+    "@md2posts/renderer": "workspace:*",
+    "@md2posts/sources": "workspace:*",
+    "@md2posts/wechat-sdk": "workspace:*",
     "sharp": "^0.33.5",
     "yaml": "^2.7.0"
   },
