@@ -9,7 +9,7 @@ FLOCK_BIN="$(command -v flock || echo /usr/bin/flock)"
 RUN_USER="${SUDO_USER:-$(whoami)}"
 
 if [[ -z "${NODE_BIN}" ]]; then
-  echo "错误: 未找到 node 可执行文件，请先安装 Node.js >= 22" >&2
+  echo "错误: 未找到 node 可执行文件，请先安装 Node.js >= 20" >&2
   exit 1
 fi
 

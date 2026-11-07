@@ -168,6 +168,10 @@ sudo nano /etc/md2wechat/wechat.env
 # 4. Trigger a test run and inspect logs
 sudo systemctl start md2wechat-sync.service
 journalctl -u md2wechat-sync.service -n 50 -f
+
+# 5. Uninstall service & timer (optional)
+bash systemd/uninstall-systemd.sh          # Stops and removes systemd service/timer (keeps credentials)
+bash systemd/uninstall-systemd.sh --purge  # Also removes /etc/md2wechat credentials directory
 ```
 
 Concurrency is guarded at two levels: Linux `flock` in the systemd unit and a PID-checked `.lock` file inside `StateStore.withLock()`.

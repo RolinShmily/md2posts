@@ -168,6 +168,10 @@ sudo nano /etc/md2wechat/wechat.env
 # 4. 手动触发一次并查看实时日志
 sudo systemctl start md2wechat-sync.service
 journalctl -u md2wechat-sync.service -n 50 -f
+
+# 5. 卸载服务与定时器（按需）
+bash systemd/uninstall-systemd.sh          # 停止并移除 systemd 单元（保留 /etc/md2wechat 密钥文件）
+bash systemd/uninstall-systemd.sh --purge  # 彻底清除服务并删除 /etc/md2wechat 凭据目录
 ```
 
 并发安全由外层 Linux `flock` 与内层 `StateStore.withLock()`（带 PID 存活检测的 `.lock` 文件）双重保障。
