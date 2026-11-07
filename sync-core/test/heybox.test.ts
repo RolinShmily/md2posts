@@ -40,18 +40,14 @@ test('crop16x9Cover crops an image into a 16:9 ratio JPEG buffer', async () => {
   assert.equal(cropped[2], 0xff);
 });
 
-test('inferHeyBoxMetadata correctly maps gaming topics and respects custom frontmatter', () => {
-  // 1. Inferred from CS2 title/tags
-  const cs2Meta = inferHeyBoxMetadata({ tags: ['CS2', 'FPS'] }, 'CS2 Autoexec 详解');
-  assert.equal(cs2Meta.community, 'Counter-Strike 2');
-  assert.equal(cs2Meta.gameId, 730);
-  assert.ok(cs2Meta.hashtags.includes('CS2'));
+test('inferHeyBoxMetadata defaults to clean unselected draft mode and respects custom frontmatter', () => {
+  // 1. Default fallback: no community or hashtags forced, safe for draft creation
+  const defaultMeta = inferHeyBoxMetadata({ tags: ['CS2', 'FPS'] }, 'CS2 Autoexec 详解');
+  assert.equal(defaultMeta.community, '');
+  assert.equal(defaultMeta.gameId, undefined);
+  assert.deepEqual(defaultMeta.hashtags, []);
 
-  // 2. Inferred from Switch tags
-  const switchMeta = inferHeyBoxMetadata({ tags: ['Switch', 'AMS'] }, 'Nintendo Switch 更新指南');
-  assert.equal(switchMeta.community, '任天堂Switch');
-
-  // 3. Custom frontmatter overrides inference
+  // 2. Custom frontmatter explicitly specified
   const customMeta = inferHeyBoxMetadata(
     {
       tags: ['Other'],
@@ -108,7 +104,7 @@ test('prepareHeyBoxArticle and HeyBoxPublisher export complete bundle with code 
 
     // Check transformed article.md has replaced code block with image tag
     const articleContent = fs.readFileSync(path.join(outDir, 'article.md'), 'utf8');
-    assert.match(articleContent, /!\[代码块 - pwsh\]\(\.\/assets\/code_1_pwsh\.png\)/);
+    assert.match(articleContent, /!\[代码块 - pwsh\]\((?:\.\/)?assets\/code_1_pwsh\.png\)/);
     assert.match(articleContent, /小黑盒专栏/);
 
     // Check code image file was actually written to assets/

@@ -30,7 +30,7 @@ pinned: true
 });
 
 test('FsSource scans bundle post directories and computes composite hash', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-source-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-source-test-'));
 
   try {
     const post1Dir = path.join(tmpDir, 'post-1');

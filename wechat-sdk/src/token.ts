@@ -41,7 +41,7 @@ export class FileTokenStore implements TokenStore {
         this.filePath = path.resolve(filePath);
       }
     } else {
-      this.filePath = path.join(os.homedir(), '.cache', 'md2wechat', 'wechat-token.json');
+      this.filePath = path.join(os.homedir(), '.cache', 'md2posts', 'wechat-token.json');
     }
   }
 

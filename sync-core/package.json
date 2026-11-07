@@ -16,6 +16,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@md2posts/heybox-sdk": "workspace:*",
     "@md2posts/renderer": "workspace:*",
     "@md2posts/sources": "workspace:*",
     "@md2posts/wechat-sdk": "workspace:*",

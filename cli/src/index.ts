@@ -5,12 +5,12 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { WeChatClient } from '@md2posts/wechat-sdk';
+import { HeyBoxClient, HeyBoxPublisher } from '@md2posts/heybox-sdk';
 import { listThemes } from '@md2posts/renderer';
 import { FsSource } from '@md2posts/sources';
 import {
   loadConfig,
   SyncPipeline,
-  HeyBoxPublisher,
   parseArticleSelection,
   CheckPostItem,
 } from '@md2posts/sync-core';
@@ -141,7 +141,7 @@ async function runCheck(configPath?: string, cliValues?: any) {
   }
 
   if (updatedItems.length > 0) {
-    console.log('✏️  检测到内容修改的历史文章 (sync 默认不推，如需推送请运行 `md2wechat push`):');
+    console.log('✏️  检测到内容修改的历史文章 (sync 默认不推，如需推送请运行 `md2posts push`):');
     for (const item of updatedItems) {
       console.log(`   【已改】 [${item.id}] ${item.title}`);
     }
@@ -210,14 +210,17 @@ async function runPreview(slug: string, configPath?: string, output?: string, th
     console.log(`  发布包目录: ${bundleDir}`);
     console.log(`  文章标题:   ${prepared.title}`);
     console.log(
-      `  社区专区:   ${prepared.metadata.community}${
-        prepared.metadata.gameId ? ` (GameID: ${prepared.metadata.gameId})` : ''
+      `  社区专区:   ${
+        prepared.metadata.community
+          ? `${prepared.metadata.community}${prepared.metadata.gameId ? ` (GameID: ${prepared.metadata.gameId})` : ''}`
+          : '草稿模式（发布时在后台自主选择）'
       }`
     );
     console.log(`  话题标签:   ${prepared.metadata.hashtags.map((h) => `#${h}#`).join(' ') || '无'}`);
     console.log(`  代码块转图: ${codeImgCount} 张 (防止手机端排版打散)`);
     console.log(`  16:9 封面:  ${prepared.coverBuffer ? '已裁切生成 (cover_16_9.jpg)' : '未找到封面'}`);
-    console.log(`\n💡 提示：双击打开 ${bundleDir}/preview.html 可预览小黑盒效果并一键复制稿件！\n`);
+    console.log(`\n💡 提示：双击打开 ${bundleDir}/preview.html 可预览小黑盒效果！`);
+    console.log(`   👉 点击页面顶部【一键复制小黑盒富文本】，并在小黑盒「发布文章」编辑区直接 Ctrl+V 粘贴即可！\n`);
     return;
   }
 
@@ -431,7 +434,7 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
   console.log(`  - 失败文章:         ${report.failed.length} 篇`);
   if (report.skippedUpdatedCount > 0) {
     console.log(
-      `  - 已跳过修改的老文章: ${report.skippedUpdatedCount} 篇 (默认不自动更新老文章，如需推送请运行 md2wechat push)`
+      `  - 已跳过修改的老文章: ${report.skippedUpdatedCount} 篇 (默认不自动更新老文章，如需推送请运行 md2posts push)`
     );
   }
   if (report.skippedDueToLimit > 0) {
@@ -532,7 +535,7 @@ async function main() {
     case 'preview': {
       const slug = parsed.positionals[0];
       if (!slug) {
-        console.error('错误: 请指定要预览的文章 slug，例如: md2wechat preview 45-immortalwrt-1\n');
+        console.error('错误: 请指定要预览的文章 slug，例如: md2posts preview 45-immortalwrt-1\n');
         process.exit(1);
       }
       await runPreview(slug, configPath, parsed.values.output, parsed.values.theme, parsed.values);

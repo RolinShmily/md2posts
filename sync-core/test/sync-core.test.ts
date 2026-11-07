@@ -88,7 +88,7 @@ test('ImageProcessor converts WebP to PNG/JPEG and keeps output under maxByteSiz
 });
 
 test('StateStore persists and reads post, image, and cover entries', () => {
-  const tmpFile = path.join(os.tmpdir(), `md2wechat-state-test-${Date.now()}.json`);
+  const tmpFile = path.join(os.tmpdir(), `md2posts-state-test-${Date.now()}.json`);
   try {
     const store = new StateStore(tmpFile);
     assert.deepEqual(store.getAllPosts(), {});
@@ -116,7 +116,7 @@ test('StateStore persists and reads post, image, and cover entries', () => {
 });
 
 test('SyncPipeline check(), preview(), and push() run cleanly with image cache', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-pipeline-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-pipeline-test-'));
   const tmpState = path.join(tmpDir, 'state.json');
 
   try {

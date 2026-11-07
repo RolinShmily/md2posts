@@ -1,4 +1,4 @@
-# md2wechat 配置文件模板 (config.example.yaml)
+# md2posts 配置文件模板 (config.example.yaml)
 
 source:
   type: fs
@@ -36,7 +36,7 @@ site:
   license: "CC BY-NC-SA 4.0"
 
 render:
-  # 内置 28 套公众号排版主题 (运行 md2wechat themes 可查看全部清单)
+  # 内置 28 套公众号排版主题 (运行 md2posts themes 可查看全部清单)
   # 推荐: tech-blue (科技蓝), fullstack-blue (全栈蓝), klein (克莱因蓝)
   theme: "tech-blue"
   # 主色调覆盖（留空则跟随主题默认主色，例如填: "#0e88eb"）
@@ -82,7 +82,7 @@ wechat:
   appSecret: ""
 
 notify:
-  # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON，也可通过 MD2WECHAT_WEBHOOK_URL 环境变量设置）
+  # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON，也可通过 MD2POSTS_WEBHOOK_URL 环境变量覆盖）
   webhookUrl: ""
   onSuccess: true
   onFailure: true

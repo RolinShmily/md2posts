@@ -7,6 +7,7 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NODE_BIN="$(command -v node || true)"
 FLOCK_BIN="$(command -v flock || echo /usr/bin/flock)"
 RUN_USER="${SUDO_USER:-$(whoami)}"
+USER_HOME="$(eval echo "~${RUN_USER}")"
 
 if [[ -z "${NODE_BIN}" ]]; then
   echo "错误: 未找到 node 可执行文件，请先安装 Node.js >= 20" >&2
@@ -36,7 +37,7 @@ Wants=network-online.target
 Type=oneshot
 User=${RUN_USER}
 WorkingDirectory=${REPO_DIR}
-Environment="PATH=${NODE_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=${USER_HOME}/.local/bin:${USER_HOME}/.cargo/bin:${NODE_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EnvironmentFile=-/etc/md2posts/md2posts.env
 ExecStart=${FLOCK_BIN} -n /tmp/md2posts.lock ${NODE_BIN} ${REPO_DIR}/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
 StandardOutput=journal

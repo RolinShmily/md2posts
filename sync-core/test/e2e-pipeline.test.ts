@@ -13,7 +13,7 @@ const PNG_1X1 = Buffer.from(
 );
 
 test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> webhook notify', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-e2e-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-e2e-'));
   const postsRoot = path.join(tmpDir, 'posts');
   const stateFile = path.join(tmpDir, 'state.json');
   fs.mkdirSync(postsRoot, { recursive: true });
@@ -201,7 +201,7 @@ test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> 
 });
 
 test('StateStore.withLock blocks concurrent writes from a live process', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-lock-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-lock-'));
   const stateFile = path.join(tmpDir, 'state.json');
 
   try {

@@ -54,7 +54,7 @@ export class StateStore {
         this.filePath = path.resolve(filePath);
       }
     } else {
-      this.filePath = path.join(os.homedir(), '.local', 'share', 'md2wechat', 'state.json');
+      this.filePath = path.join(os.homedir(), '.local', 'share', 'md2posts', 'state.json');
     }
     this.lockPath = `${this.filePath}.lock`;
     this.data = this.load();
@@ -116,7 +116,7 @@ export class StateStore {
             continue;
           }
           throw new Error(
-            `[StateStore] 另一个 md2wechat 同步进程 (PID: ${info.pid}) 正在运行中，已阻止并发写入。`
+            `[StateStore] 另一个 md2posts 同步进程 (PID: ${info.pid}) 正在运行中，已阻止并发写入。`
           );
         } catch (readErr: any) {
           if (readErr.message?.includes('正在运行中')) {

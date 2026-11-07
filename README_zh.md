@@ -1,10 +1,10 @@
-<h1 align="center">md2wechat</h1>
+<h1 align="center">md2posts</h1>
 
 <h4 align="center">将 Markdown 静态博客文章自动排版并同步至多平台草稿箱（微信公众号 + 小黑盒 HeyBox）</h4>
 
 <div align="center">
 
-[![stars](https://img.shields.io/github/stars/RolinShmily/md2wechat.svg?style=flat&color=green)](https://github.com/RolinShmily/md2wechat)
+[![stars](https://img.shields.io/github/stars/RolinShmily/md2posts.svg?style=flat&color=green)](https://github.com/RolinShmily/md2posts)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
@@ -19,7 +19,7 @@
 
 ## 项目简介
 
-**md2posts**（原 *md2wechat*）用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（通用适配 Hugo、Hexo、Astro、Next.js 等任意静态博客）自动渲染并同步推送至：
+**md2posts** 用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（通用适配 Hugo、Hexo、Astro、Next.js 等任意静态博客）自动渲染并同步推送至：
 1. **微信公众号草稿箱**（`cgi-bin/draft/*`，28 套内联样式主题、微信安全列表结构与块级代码）；
 2. **小黑盒（HeyBox）社区**（**代码块/表格自动转深色卡片图**防止手机端折行破版、16:9 封面自动裁切、CS2/Switch/MC 等专区与话题自动推断）。
 
@@ -56,19 +56,21 @@
   - **摘要（≤ 120 字）**：超长自动截断加 `…`（防 `45004`）。
   - **草稿更新自愈**：更新已有草稿（`draft/update`）时，若该草稿已在微信后台被发表或手动删除（返回 `40007`），自动降级调用 `draft/add` 重建草稿；遇到配额耗尽（`45009`）、IP 白名单（`40164`）或权限错误（`48001`）则立即熔断报错。
 - **本地离线预览与一键复制**：
-  - `md2wechat preview <slug>` 可在零微信 API 请求下生成带手机边框模拟与**「一键复制富文本」按钮**的独立 HTML 文件（本地图片已内联为 Base64），双击即可在浏览器预览并一键复制到公众号后台粘贴。
+  - `md2posts preview <slug>`：在零外部 API 请求下生成带手机边框模拟与**「一键复制富文本」按钮**的独立 HTML 文件（本地图片已内联为 Base64），双击即可在浏览器预览并一键复制到公众号后台粘贴；
+  - `md2posts preview <slug> --to heybox`：自动将代码块渲染为高清深色卡片图（Base64 内联）、裁切 16:9 封面并自动映射小黑盒规范的 H2/H3 标题，双击打开 `preview.html` 即可一键复制小黑盒富文本，在小黑盒「发布文章」编辑区直接 `Ctrl+V` 即可完美就位。
 
 ---
 
 ## 目录结构
 
 ```text
-md2wechat/
-├── wechat-sdk/                    # @md2wechat/wechat-sdk：零外部依赖的纯微信 API SDK
-├── renderer/                      # @md2wechat/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
-├── sources/                       # @md2wechat/sources：文件系统文章源适配器 + 复合 SHA-256 计算
-├── sync-core/                     # @md2wechat/sync-core：sharp 图片处理、进程锁状态存储、同步流水线与 Webhook 通知
-├── cli/                           # @md2wechat/cli：命令行入口
+md2posts/
+├── wechat-sdk/                    # @md2posts/wechat-sdk：微信公众平台 API SDK（诊断、素材、草稿箱）
+├── heybox-sdk/                    # @md2posts/heybox-sdk：小黑盒专属 SDK（代码卡片图生成、16:9 封面、专区推断、发布器）
+├── renderer/                      # @md2posts/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
+├── sources/                       # @md2posts/sources：文件系统文章源适配器 + 复合 SHA-256 计算
+├── sync-core/                     # @md2posts/sync-core：sharp 图片处理、进程锁状态存储、微信同步流水线与 Webhook 通知
+├── cli/                           # @md2posts/cli：命令行入口
 ├── systemd/                       # systemd 每日定时服务单元与一键安装脚本
 └── config.example.yaml            # 完整配置文件模板
 ```
@@ -147,7 +149,7 @@ node cli/dist/index.js sync --include-updated       # 破例将修改过的老�
 node cli/dist/index.js sync --pull                  # 立即强制拉取远程博客仓库更新（绕过 24h 冷却）
 ```
 
-### 交互式勾选输入语法（`md2wechat push`）
+### 交互式勾选输入语法（`md2posts push`）
 
 不带参数运行 `push`（或加 `-i` / `--select`）时，终端会优先置顶展示 `🆕 新增` 与 `✏️ 已修改` 文章，支持输入：
 - **单个或多个序号**：`1` 或 `1,3,5`
@@ -167,19 +169,19 @@ node cli/dist/index.js sync --pull                  # 立即强制拉取远程�
 pnpm install && pnpm build
 node cli/dist/index.js baseline
 
-# 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库与 node 路径，设置 24h 定时器）
+# 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库、node 与用户环境路径，设置 24h 定时器）
 bash systemd/install-systemd.sh
 
-# 3. 写入公众号密钥（权限已设为 600）
-sudo nano /etc/md2wechat/wechat.env
+# 3. 写入平台密钥与配置（权限已设为 600）
+sudo nano /etc/md2posts/md2posts.env
 
 # 4. 手动触发一次并查看实时日志
-sudo systemctl start md2wechat-sync.service
-journalctl -u md2wechat-sync.service -n 50 -f
+sudo systemctl start md2posts-sync.service
+journalctl -u md2posts-sync.service -n 50 -f
 
 # 5. 卸载服务与定时器（按需）
-bash systemd/uninstall-systemd.sh          # 停止并移除 systemd 单元（保留 /etc/md2wechat 密钥文件）
-bash systemd/uninstall-systemd.sh --purge  # 彻底清除服务并删除 /etc/md2wechat 凭据目录
+bash systemd/uninstall-systemd.sh          # 停止并移除 systemd 单元（保留 /etc/md2posts 密钥文件）
+bash systemd/uninstall-systemd.sh --purge  # 彻底清除服务并删除 /etc/md2posts 凭据目录
 ```
 
 并发安全由外层 Linux `flock` 与内层 `StateStore.withLock()`（带 PID 存活检测的 `.lock` 文件）双重保障。
@@ -188,5 +190,6 @@ bash systemd/uninstall-systemd.sh --purge  # 彻底清除服务并删除 /etc/md
 
 ## 致谢与许可
 
-- 排版渲染核心（`renderer/vendor/`）移植自 [laogou717/md-wechat](https://github.com/laogou717/md-wechat)（MIT 许可证）。
+- 微信排版渲染核心（`renderer/vendor/`）移植自 [laogou717/md-wechat](https://github.com/laogou717/md-wechat)（MIT 许可证）。
+- 小黑盒社区交互与发帖设计参考自 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)（MIT 许可证，感谢原作者及维护者的开源贡献）。
 - 本项目基于 MIT 许可证开源。

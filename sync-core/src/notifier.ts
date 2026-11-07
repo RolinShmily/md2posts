@@ -14,7 +14,12 @@ export async function sendSyncNotification(
   notifyConfig: NotifyConfig | undefined,
   report: SyncReport
 ): Promise<void> {
-  const webhookUrl = (notifyConfig?.webhookUrl || process.env.MD2WECHAT_WEBHOOK_URL || '').trim();
+  const webhookUrl = (
+    notifyConfig?.webhookUrl ||
+    process.env.MD2POSTS_WEBHOOK_URL ||
+    process.env.MD2WECHAT_WEBHOOK_URL ||
+    ''
+  ).trim();
   if (!webhookUrl) return;
 
   const hasPushed = report.pushed.length > 0;
@@ -27,7 +32,7 @@ export async function sendSyncNotification(
     return;
   }
 
-  const lines: string[] = ['【md2wechat 公众号草稿同步通知】'];
+  const lines: string[] = ['【md2posts 多平台草稿同步通知】'];
   if (hasPushed) {
     lines.push(`✅ 成功推入草稿箱 (${report.pushed.length} 篇)：`);
     for (const item of report.pushed) {
@@ -53,7 +58,7 @@ export async function sendSyncNotification(
     body = { msgtype: 'text', text: { content: text } };
   } else {
     body = {
-      event: 'md2wechat_sync',
+      event: 'md2posts_sync',
       text,
       pushedCount: report.pushed.length,
       failedCount: report.failed.length,

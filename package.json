@@ -10,7 +10,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "cli": "node cli/dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm -r exec tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",

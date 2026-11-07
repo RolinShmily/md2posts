@@ -18,7 +18,7 @@ const PNG_1X1 = Buffer.from(
 );
 
 test('CLI commands: themes, check, baseline, preview, and push --dry-run', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-cli-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-cli-test-'));
   const postsRoot = path.join(tmpDir, 'posts');
   const postDir = path.join(postsRoot, 'cli-demo');
   const configPath = path.join(tmpDir, 'config.yaml');

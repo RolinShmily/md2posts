@@ -1,0 +1,28 @@
+{
+  "name": "@md2posts/heybox-sdk",
+  "version": "0.1.0",
+  "description": "Standalone TypeScript HeyBox (XiaoHeiHe) SDK, article transformer, and code-card generator",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "playwright-core": "^1.65.0",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

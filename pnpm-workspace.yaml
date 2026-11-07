@@ -1,5 +1,6 @@
 packages:
   - 'wechat-sdk'
+  - 'heybox-sdk'
   - 'renderer'
   - 'sources'
   - 'sync-core'

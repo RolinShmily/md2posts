@@ -12,3 +12,5 @@ config.yaml
 state.json
 *.lock
 preview-*.html
+.playwright-mcp
+

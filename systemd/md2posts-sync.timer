@@ -1,5 +1,5 @@
 [Unit]
-Description=Run md2wechat sync periodically (Daily)
+Description=Run md2posts sync periodically (Daily)
 After=network-online.target
 
 [Timer]

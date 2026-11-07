@@ -6,14 +6,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "md2posts": "./dist/index.js",
-    "md2wechat": "./dist/index.js"
+    "md2posts": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@md2posts/heybox-sdk": "workspace:*",
     "@md2posts/renderer": "workspace:*",
     "@md2posts/sources": "workspace:*",
     "@md2posts/sync-core": "workspace:*",

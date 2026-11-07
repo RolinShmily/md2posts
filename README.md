@@ -1,10 +1,10 @@
-<h1 align="center">md2wechat</h1>
+<h1 align="center">md2posts</h1>
 
 <h4 align="center">Automated Markdown static blog multi-platform formatter & sync tool (WeChat Draft Box + XiaoHeiHe / HeyBox)</h4>
 
 <div align="center">
 
-[![stars](https://img.shields.io/github/stars/RolinShmily/md2wechat.svg?style=flat&color=green)](https://github.com/RolinShmily/md2wechat)
+[![stars](https://img.shields.io/github/stars/RolinShmily/md2posts.svg?style=flat&color=green)](https://github.com/RolinShmily/md2posts)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
@@ -19,7 +19,7 @@
 
 ## Overview
 
-**md2posts** (formerly *md2wechat*) converts static blog posts written in Markdown + YAML frontmatter (compatible with Hugo, Hexo, Astro, Next.js, and other static site generators) into platform-optimized rich formats and synchronizes them to:
+**md2posts** converts static blog posts written in Markdown + YAML frontmatter (compatible with Hugo, Hexo, Astro, Next.js, and other static site generators) into platform-optimized rich formats and synchronizes them to:
 1. **WeChat Official Account Draft Box** (`cgi-bin/draft/*` with 28 inline styles, WeChat-safe section lists, and line-by-line code blocks)
 2. **XiaoHeiHe (HeyBox / 小黑盒)** (with automatic code-block/table-to-image conversion, 16:9 header banners, and game community metadata inference)
 
@@ -57,19 +57,21 @@
   - Truncates summaries exceeding `120` characters (`45004` prevention).
   - **Draft Upsert Self-Healing**: Automatically falls back from `draft/update` to `draft/add` if a previously synced draft was deleted or published in the WeChat backend (`40007`), while halting immediately on non-recoverable errors (`40164` IP whitelist, `48001` unauthorized, `45009` daily quota).
 - **Standalone Offline Preview**:
-  - `md2wechat preview <slug>` generates a self-contained HTML file with base64-inlined local images, mobile viewport framing, and a **One-Click Copy Rich Text** button for manual pasting into the WeChat backend.
+  - `md2posts preview <slug>`: Generates a self-contained HTML file with base64-inlined local images, mobile viewport framing, and a **One-Click Copy Rich Text** button for manual pasting into the WeChat backend.
+  - `md2posts preview <slug> --to heybox`: Automatically turns code blocks into high-res dark card images (Base64-inlined), crops 16:9 covers, normalizes headings to H2/H3 for XiaoHeiHe ProseMirror, and provides a **One-Click Copy HeyBox Rich Text** button to paste directly (`Ctrl+V`) into the "发布文章" editor.
 
 ---
 
 ## Directory Layout
 
 ```text
-md2wechat/
-├── wechat-sdk/                    # @md2wechat/wechat-sdk: Zero-dependency WeChat Official Account API SDK
-├── renderer/                      # @md2wechat/renderer: Vendored md-wechat engine + AST-aware preprocessor
-├── sources/                       # @md2wechat/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
-├── sync-core/                     # @md2wechat/sync-core: Image processor (sharp), lockfile state store, pipeline & webhook notifier
-├── cli/                           # @md2wechat/cli: CLI entry point
+md2posts/
+├── wechat-sdk/                    # @md2posts/wechat-sdk: WeChat Official Account API SDK (diagnose, material, drafts)
+├── heybox-sdk/                    # @md2posts/heybox-sdk: XiaoHeiHe (HeyBox) SDK, code card generator, 16:9 banner & publisher
+├── renderer/                      # @md2posts/renderer: Vendored md-wechat engine + AST-aware preprocessor
+├── sources/                       # @md2posts/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
+├── sync-core/                     # @md2posts/sync-core: Image processor (sharp), lockfile state store, pipeline & webhook notifier
+├── cli/                           # @md2posts/cli: CLI entry point
 ├── systemd/                       # systemd daily service, timer & one-step installer script
 └── config.example.yaml            # Full configuration template
 ```
@@ -147,7 +149,7 @@ node cli/dist/index.js sync --include-updated       # Also sync modified histori
 node cli/dist/index.js sync --pull                  # Force pull remote repository now (bypass 24h cooldown)
 ```
 
-### Interactive Selection Syntax (`md2wechat push`)
+### Interactive Selection Syntax (`md2posts push`)
 
 When running `push` without arguments (or with `-i` / `--select`), you can select articles using:
 - **Numbers / Lists**: `1` or `1,3,5`
@@ -160,7 +162,7 @@ When running `push` without arguments (or with `-i` / `--select`), you can selec
 
 ## VPS Automated Daily Deployment (`systemd`)
 
-To run `md2wechat` unattended on a Linux VPS with a static whitelisted IP (daily check every 24 hours with zero inbound ports):
+To run `md2posts` unattended on a Linux VPS with a static whitelisted IP (daily check every 24 hours with zero inbound ports):
 
 ```bash
 # 1. Build and baseline historical posts
@@ -170,16 +172,16 @@ node cli/dist/index.js baseline
 # 2. Install and enable the systemd service & 24h daily timer
 bash systemd/install-systemd.sh
 
-# 3. Add your WeChat credentials (permissions: 0600)
-sudo nano /etc/md2wechat/wechat.env
+# 3. Add your credentials and configuration (permissions: 0600)
+sudo nano /etc/md2posts/md2posts.env
 
 # 4. Trigger a test run and inspect logs
-sudo systemctl start md2wechat-sync.service
-journalctl -u md2wechat-sync.service -n 50 -f
+sudo systemctl start md2posts-sync.service
+journalctl -u md2posts-sync.service -n 50 -f
 
 # 5. Uninstall service & timer (optional)
 bash systemd/uninstall-systemd.sh          # Stops and removes systemd service/timer (keeps credentials)
-bash systemd/uninstall-systemd.sh --purge  # Also removes /etc/md2wechat credentials directory
+bash systemd/uninstall-systemd.sh --purge  # Also removes /etc/md2posts credentials directory
 ```
 
 Concurrency is guarded at two levels: Linux `flock` in the systemd unit and a PID-checked `.lock` file inside `StateStore.withLock()`.
@@ -188,5 +190,6 @@ Concurrency is guarded at two levels: Linux `flock` in the systemd unit and a PI
 
 ## Credits & License
 
-- Rendering engine (`renderer/vendor/`) adapted from [laogou717/md-wechat](https://github.com/laogou717/md-wechat) under the MIT License.
+- WeChat inline styling & rendering core (`renderer/vendor/`) adapted from [laogou717/md-wechat](https://github.com/laogou717/md-wechat) under the MIT License.
+- XiaoHeiHe community interaction & posting design inspired by [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli) under the MIT License (special thanks to original authors and maintainers).
 - Licensed under the MIT License.

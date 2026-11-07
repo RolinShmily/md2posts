@@ -38,6 +38,11 @@ export interface AppConfig {
     appId: string;
     appSecret: string;
   };
+  heybox?: {
+    sessionFile?: string;
+    browserChannel?: 'chrome' | 'msedge';
+    headless?: boolean;
+  };
   notify?: {
     webhookUrl?: string;
     onSuccess?: boolean;
@@ -150,8 +155,19 @@ export function loadConfig(configPath?: string): AppConfig {
       appId,
       appSecret,
     },
+    heybox: {
+      sessionFile: parsed.heybox?.sessionFile
+        ? resolveConfigRelativePath(parsed.heybox.sessionFile, configDir)
+        : undefined,
+      browserChannel: parsed.heybox?.browserChannel,
+      headless: parsed.heybox?.headless !== false,
+    },
     notify: {
-      webhookUrl: process.env.MD2WECHAT_WEBHOOK_URL || parsed.notify?.webhookUrl || undefined,
+      webhookUrl:
+        process.env.MD2POSTS_WEBHOOK_URL ||
+        process.env.MD2WECHAT_WEBHOOK_URL ||
+        parsed.notify?.webhookUrl ||
+        undefined,
       onSuccess: parsed.notify?.onSuccess !== false,
       onFailure: parsed.notify?.onFailure !== false,
     },
