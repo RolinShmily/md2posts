@@ -61,6 +61,9 @@ render:
   appendCopyrightCard: true
 
 sync:
+  # 默认自动同步的目标平台: wechat (仅微信公众号，默认) | heybox (仅小黑盒) | all (双端同时推送)
+  # 命令行参数具有更高优先级，如: pnpm cli sync --to all 或 pnpm cli push <slug> --to all
+  target: "wechat"
   # 同步状态文件保存路径（存放在博客仓库外，记录已同步文章哈希与已上传图片微信 URL）
   stateFile: "./state.json"
   # 单次同步推送的最大文章数量（防止首次或批量同步超出微信 API 调用上限）
@@ -77,9 +80,17 @@ sync:
   onlyFansCanComment: 0
 
 wechat:
-  # 建议通过环境变量 WECHAT_APPID 与 WECHAT_SECRET 传入，此处留空
+  # 建议通过环境变量 WECHAT_APPID 与 WECHAT_SECRET 传入，也可在此处直接填写
   appId: ""
   appSecret: ""
+
+heybox:
+  # 小黑盒创作者会话凭据文件路径（可选，留空则自动读取系统的 ~/.config/xiaoheihe-cli/session.json 或 %LOCALAPPDATA%\xiaoheihe-cli\session.json）
+  sessionFile: ""
+  # 底层推流工具命令名或绝对路径（可选，默认自动探测 PATH 中的 xiaoheihe 或 xiaoheihe-cli）
+  cliPath: "xiaoheihe"
+  # 浏览器执行通道 (chrome 或 msedge，用于无头推流或本地扫码)
+  browserChannel: "chrome"
 
 notify:
   # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON，也可通过 MD2POSTS_WEBHOOK_URL 环境变量覆盖）

@@ -15,22 +15,27 @@ import {
   hasSavedSession,
   publishDraftWithBrowser,
 } from './browser-publisher.js';
+import {
+  HeyBoxApiClient,
+  resolveHeyBoxSessionFile,
+} from './api-client.js';
 import { HeyBoxError } from './errors.js';
 
 const execFileAsync = promisify(execFile);
 
 export class HeyBoxClient {
   private readonly options: HeyBoxClientOptions;
+  public readonly apiClient: HeyBoxApiClient;
 
   constructor(options: HeyBoxClientOptions = {}) {
     const assetRoots = options.assetRoots || options.source?.assetRoots || ['{postDir}'];
     const defaultCoverPath = options.defaultCoverPath || options.sync?.defaultCover;
+    const sessionFile = resolveHeyBoxSessionFile(options.sessionFile);
 
     this.options = {
       cliPath: options.cliPath || 'xiaoheihe',
       outputDir: options.outputDir || path.resolve(process.cwd(), 'out', 'heybox'),
-      sessionFile:
-        options.sessionFile || path.resolve(process.cwd(), '.cache', 'heybox-session.json'),
+      sessionFile,
       browserChannel: options.browserChannel,
       headless: options.headless ?? true,
       browserTimeoutMs: options.browserTimeoutMs,
@@ -38,11 +43,13 @@ export class HeyBoxClient {
       defaultCoverPath,
       dryRun: Boolean(options.dryRun),
     };
+
+    this.apiClient = new HeyBoxApiClient(sessionFile);
   }
 
   /**
    * Launches an interactive browser session to log in to XiaoHeiHe Creator Center
-   * and saves the session credentials for subsequent automated headless publishing.
+   * and saves the session credentials for subsequent automated publishing.
    */
   public async login(options?: { timeoutMs?: number }): Promise<string> {
     return await loginInteractively({
@@ -56,7 +63,7 @@ export class HeyBoxClient {
    * Checks whether a saved login session exists on disk.
    */
   public hasSession(): boolean {
-    return hasSavedSession(this.options.sessionFile);
+    return this.apiClient.hasSession() || hasSavedSession(this.options.sessionFile);
   }
 
   /**
@@ -131,9 +138,10 @@ export class HeyBoxClient {
   /**
    * Publishes or saves draft to XiaoHeiHe (HeyBox).
    * 1. If dry-run: returns dry-run summary.
-   * 2. If browser session exists and skipBrowser is not set: runs Playwright headless automation to push directly.
-   * 3. If external `xiaoheihe` CLI is installed, invokes it.
-   * 4. Otherwise, generates complete package on disk with friendly instructions.
+   * 2. Pure TypeScript Native API direct push (Primary method: 0 external dependencies!).
+   * 3. Fallback to external `xiaoheihe` CLI if installed.
+   * 4. Fallback to Playwright browser automation.
+   * 5. Fallback to local package generation with guidance.
    */
   public async publishDraft(
     article: HeyBoxArticleInput,
@@ -158,8 +166,115 @@ export class HeyBoxClient {
       };
     }
 
-    // 1. Try Playwright Headless Automation (Primary automated SOP)
-    if (!options.skipBrowser && this.hasSession()) {
+    // 1. Primary: Pure TypeScript Native API push (Zero Python, Zero external CLI)
+    if (this.apiClient.hasSession()) {
+      try {
+        console.log(
+          `[HeyBox] 正在通过原生 API 直接提交草稿箱 (上传 ${prepared.assets.size} 项素材)...`
+        );
+        const imageList = Array.from(prepared.assets.entries()).map(([filename, buffer]) => ({
+          filename,
+          buffer,
+          mimetype:
+            filename.endsWith('.jpg') || filename.endsWith('.jpeg')
+              ? 'image/jpeg'
+              : 'image/png',
+        }));
+
+        const draftRes = await this.apiClient.createArticleDraft({
+          title: prepared.title,
+          markdown: prepared.markdown,
+          images: imageList,
+          communities: prepared.metadata.community ? [prepared.metadata.community] : [],
+          hashtags: prepared.metadata.hashtags || [],
+        });
+
+        return {
+          slug: article.id,
+          title: prepared.title,
+          bundleDir,
+          hasCover: Boolean(prepared.coverBuffer),
+          codeImagesCount,
+          publishedViaCli: false,
+          publishedViaBrowser: false,
+          draftId: draftRes.draftId,
+          draftUrl: draftRes.shareUrl,
+          message: `草稿已成功通过纯 TS 原生 API 推入小黑盒草稿箱！(草稿ID: ${draftRes.draftId})`,
+        };
+      } catch (err: any) {
+        console.warn(`[HeyBox] 原生 API 推送提示 (${err.message})，尝试降级通道...`);
+      }
+    }
+
+    // 2. Fallback: External xiaoheihe CLI if installed
+    const cliAvailable = await this.isCliAvailable();
+    if (cliAvailable) {
+      try {
+        const coverPath = path.join(bundleDir, 'cover_16_9.jpg');
+        const cli = this.options.cliPath || 'xiaoheihe';
+
+        const cliArgs = [
+          'post',
+          'create',
+          '--kind',
+          prepared.metadata.kind || 'article',
+          '--title',
+          prepared.title,
+          '--file',
+          'article.md',
+        ];
+
+        if (fs.existsSync(coverPath)) {
+          cliArgs.push('--image', 'cover_16_9.jpg');
+        }
+        if (prepared.metadata.community && prepared.metadata.community.trim()) {
+          cliArgs.push('--community', prepared.metadata.community.trim());
+        }
+        if (Array.isArray(prepared.metadata.hashtags)) {
+          for (const h of prepared.metadata.hashtags) {
+            if (h && String(h).trim()) {
+              cliArgs.push('--hashtag', String(h).trim());
+            }
+          }
+        }
+
+        console.log(`[HeyBox] 正在调用 ${cli} CLI 自动提交草稿（含多张图片上传，请稍候）...`);
+        const { stdout } = await execFileAsync(cli, cliArgs, {
+          cwd: bundleDir,
+          timeout: 180_000,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+
+        let draftId: string | undefined;
+        let draftUrl: string | undefined;
+        try {
+          const parsedRes = JSON.parse(stdout);
+          draftId = parsedRes?.data?.link_id ? String(parsedRes.data.link_id) : undefined;
+          draftUrl = parsedRes?.data?.readback?.result?.link?.share_url;
+        } catch {}
+
+        const message = draftId
+          ? `草稿已成功自动推入小黑盒草稿箱！(草稿ID: ${draftId})`
+          : stdout.trim() || '草稿已成功提交至小黑盒草稿箱！';
+
+        return {
+          slug: article.id,
+          title: prepared.title,
+          bundleDir,
+          hasCover: Boolean(prepared.coverBuffer),
+          codeImagesCount,
+          publishedViaCli: true,
+          draftId,
+          draftUrl,
+          message,
+        };
+      } catch (err: any) {
+        console.warn(`[HeyBox] CLI 提交异常 (${err.message})，尝试浏览器无头通道...`);
+      }
+    }
+
+    // 3. Fallback: Playwright Headless Browser Automation
+    if (!options.skipBrowser && hasSavedSession(this.options.sessionFile)) {
       try {
         const browserRes = await publishDraftWithBrowser(prepared, {
           sessionFile: this.options.sessionFile,
@@ -185,75 +300,9 @@ export class HeyBoxClient {
       }
     }
 
-    // 2. Try External CLI if installed
-    const cliAvailable = await this.isCliAvailable();
-    if (cliAvailable) {
-      try {
-        const articleMdPath = path.join(bundleDir, 'article.md');
-        const coverPath = path.join(bundleDir, 'cover_16_9.jpg');
-        const cli = this.options.cliPath || 'xiaoheihe';
-
-        const cliArgs = [
-          'post',
-          'create',
-          '--kind',
-          prepared.metadata.kind || 'article',
-          '--title',
-          prepared.title,
-          '--file',
-          'article.md',
-        ];
-
-        if (fs.existsSync(coverPath)) {
-          cliArgs.push('--image', 'cover_16_9.jpg');
-        }
-        if (prepared.metadata.community) {
-          cliArgs.push('--community', prepared.metadata.community);
-        }
-        if (Array.isArray(prepared.metadata.hashtags)) {
-          for (const h of prepared.metadata.hashtags) {
-            cliArgs.push('--hashtag', h);
-          }
-        }
-
-        console.log(`[HeyBox] 正在调用 ${cli} CLI 自动提交草稿（含多张图片上传，请稍候）...`);
-        const { stdout } = await execFileAsync(cli, cliArgs, {
-          cwd: bundleDir,
-          timeout: 180_000,
-          maxBuffer: 10 * 1024 * 1024,
-        });
-
-        let draftId: string | undefined;
-        let draftUrl: string | undefined;
-        try {
-          const parsedRes = JSON.parse(stdout);
-          draftId = parsedRes?.data?.link_id ? String(parsedRes.data.link_id) : undefined;
-          draftUrl = parsedRes?.data?.readback?.result?.link?.share_url;
-        } catch {}
-
-        const message = draftId
-          ? `草稿已成功自动推入小黑盒草稿箱！(草稿ID: ${draftId})`
-          : (stdout.trim() || '草稿已成功提交至小黑盒草稿箱！');
-
-        return {
-          slug: article.id,
-          title: prepared.title,
-          bundleDir,
-          hasCover: Boolean(prepared.coverBuffer),
-          codeImagesCount,
-          publishedViaCli: true,
-          draftId,
-          draftUrl,
-          message,
-        };
-      } catch (err: any) {
-        console.warn(`[HeyBox] CLI 提交异常 (${err.message})，使用本地发布包。`);
-      }
-    }
-
     const tip = this.hasSession()
       ? '小黑盒专属发布包已生成！双击 preview.html 即可一键复制富文本粘贴。'
-      : '小黑盒发布包已就位！可运行 `md2posts heybox-login` 开启全自动无人值守推流。';
+      : '小黑盒发布包已就位！可运行 `pnpm cli login --to heybox` 扫码或配置 sessionFile 开启全自动无人值守推流。';
 
     return {
       slug: article.id,
