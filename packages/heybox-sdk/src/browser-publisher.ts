@@ -20,16 +20,34 @@ const CREATOR_ARTICLE_NEW_URL = 'https://www.xiaoheihe.cn/creator/editor/draft/a
 function resolveBrowserChannel(preferred?: 'chrome' | 'msedge'): 'chrome' | 'msedge' | undefined {
   if (preferred) return preferred;
 
-  // On Windows / macOS / Linux, try Chrome first, then Edge
   const isWin = process.platform === 'win32';
   if (isWin) {
     const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     if (fs.existsSync(chromePath)) return 'chrome';
     if (fs.existsSync(edgePath)) return 'msedge';
+    return undefined;
   }
 
-  return 'chrome';
+  const isMac = process.platform === 'darwin';
+  if (isMac) {
+    if (fs.existsSync('/Applications/Google Chrome.app')) return 'chrome';
+    if (fs.existsSync('/Applications/Microsoft Edge.app')) return 'msedge';
+    return undefined;
+  }
+
+  // Linux: check whether system Chrome or Edge binary actually exists
+  const linuxChromePaths = [
+    '/usr/bin/google-chrome',
+    '/opt/google/chrome/chrome',
+    '/usr/bin/google-chrome-stable',
+  ];
+  if (linuxChromePaths.some((p) => fs.existsSync(p))) return 'chrome';
+
+  const linuxEdgePaths = ['/usr/bin/microsoft-edge', '/opt/microsoft/msedge/msedge'];
+  if (linuxEdgePaths.some((p) => fs.existsSync(p))) return 'msedge';
+
+  return undefined;
 }
 
 /**
