@@ -4,12 +4,10 @@
 
 <div align="center">
 
-[![stars](https://img.shields.io/github/stars/RolinShmily/md2posts.svg?style=flat&color=green)](https://github.com/RolinShmily/md2posts)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
-
-<br>
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.md) | [简体中文](README_zh.md)
 
@@ -19,180 +17,121 @@
 
 ## 项目简介
 
-**md2posts** 用于将采用「Markdown + YAML frontmatter」编写的静态博客文章（通用适配 Hugo、Hexo、Astro、Next.js 等任意静态博客）自动渲染并同步推送至：
-1. **微信公众号草稿箱**（`cgi-bin/draft/*`，28 套内联样式主题、微信安全列表结构与块级代码）；
-2. **小黑盒（HeyBox）社区**（**代码块/表格自动转深色卡片图**防止手机端折行破版、16:9 封面自动裁切、CS2/Switch/MC 等专区与话题自动推断）。
+**md2posts** 是一款专为技术博主打造的多平台内容同步工具。无需修改博客源仓库的任何文件，将本地或远程 Git 博客（Hugo、Hexo、Astro 等）的 Markdown 文章自动转码并推入草稿箱：
 
-- **多平台分发支持（微信公众号 + 小黑盒）**：
-  - `--to wechat`（默认）：同步干净的内联 HTML 至微信公众号草稿箱；
-  - `--to heybox`：自动将代码块和表格渲染为高清深色 PNG 图片（彻底解决小黑盒 App 移动端代码折行排版错乱的顽疾），自动裁切 16:9 封面图，自动匹配游戏社区（CS2、Switch、Minecraft、Steam、PS5）和 `#话题#`，并一键推入小黑盒草稿箱或生成发布包；
-  - `--to all`：单次命令一键双端同步！
-- **零侵入设计**：不修改、不污染博客源仓库的任何文件或 frontmatter 字段。所有同步状态、图片 SHA-256 缓存与配置均独立保存在外部。
-- **支持远程 Git 拉取与 24 小时冷却**：支持直接配置远程 Git 博客仓库地址（如 `https://github.com/your-username/your-blog.git`）。首次运行自动 clone 到 `.cache/blog-repo`，后续每天自动检测更新，内置 24 小时拉取冷却周期，彻底避免频繁拉取。
-- **内置 28 套公众号主题**：复用 [laogou717/md-wechat](https://github.com/laogou717/md-wechat) 渲染核心，列表采用微信安全的 `<section>` 结构（防嵌套列表被微信拍扁），代码块采用逐行块级 `<code>` + 内联高亮（防吞换行）。
-- **符合真实运营习惯的同步策略**：
-  - **每日定时自动同步 (`sync`)**：默认**只自动推送新发表的文章**。老文章在博客上的修修补补会被 `check` 检测到，但不会自动重推刷屏你的公众号草稿箱。
-  - **按需自选推送 (`push`)**：支持指定单篇、批量指定多篇，或直接进入**终端交互式勾选列表**，随时按序号、区间或关键词挑选文章推入草稿箱。
-
----
-
-## 核心特性
-
-- **AST 感知的 Markdown 预处理管线**：
-  - 基于 `markdown-it` 解析器的 `token.map` 精确识别代码块区间，配合行内反引号掩码，确保代码块（```` ``` ````）与行内代码（`` `...` ``）内部的 HTML/符号 **100% 不被误改**。
-  - **正文标题自动降级**：默认将正文 `h1~h5` 顺移为 `h2~h6`，解决博客习惯用 `#` 写章节标题、而公众号主题将 `h1` 当作居中大标题的冲突。
-  - **扩展语言高亮别名**：原生支持 `zsh`、`sh`、`shell`、`pwsh`、`ps1`、`cfg`、`conf`、`cmd`、`nginx`、`toml`、`jsonc`、`plist` 等技术博客常见语言高亮，同时在 Mac 代码窗顶部保留原始语言标签名。
-  - **丰富方言转换**：支持 GFM 任务列表（`- [ ]` / `- [x]` → `☐` / `☑`）、GFM 脚注（`[^id]`）、跨行 Bilibili/YouTube `<iframe>` 自动转主题同款**视频占位卡**、HTML `<img>` 转 Markdown 图片。
-  - **智能清洗无意义图注**：自动剔除 `1`、`alt text`、`屏幕截图...`、`Snipaste...`、文件名等占位 `alt`，仅将有实际中文语义的 `alt` 渲染为图注。
-  - **数学公式防破版与告警**：自动保护行内 `$...$` 与块级 `$$...$$` 中的 `_` 和 `*` 不被误解析为斜体，并输出公式所在行号提示。
-  - **外链转文末脚注**：非微信域名外链自动转为正文中带编号的角标并在文末生成【参考资料】，微信内链（`mp.weixin.qq.com`）保留直接点击。
-- **全自动图片与封面管线**：
-  - 使用 `sharp` 将 `.webp` 转为 `.png`/`.jpg`（透明通道转 JPG 自动填白底防黑底），并对超过 900KB 的大图按四级阶梯自适应压缩至 900KB 以内，彻底规避微信 `media/uploadimg` 的 1MB 上限（`45001`）。
-  - 自动下载外部图片并上传至微信图床，防止外链图被微信后台过滤。
-  - **SHA-256 前置缓存**：在处理或下载前先比对 `state.json` 缓存，已上传过的图片与封面直接复用微信 `mmbiz.qpic.cn` 地址与 `media_id`（零 `sharp` 开销、零重复上传）。
-  - **三级封面兜底**：优先取 frontmatter `image` → 若为空自动取文章目录下第一张配图 → 若仍无配图则使用 `config.yaml` 中配置的 `sync.defaultCover` 或 `{repoRoot}/public/og/og.png`。
-- **微信字段合规裁剪与草稿自愈**：
-  - **标题（≤ 32 字）**：超长时优先按 `|` 从右向左逐段剥离副标签，仍超长则安全截断加 `…`（防 `45003`）。
-  - **摘要（≤ 120 字）**：超长自动截断加 `…`（防 `45004`）。
-  - **草稿更新自愈**：更新已有草稿（`draft/update`）时，若该草稿已在微信后台被发表或手动删除（返回 `40007`），自动降级调用 `draft/add` 重建草稿；遇到配额耗尽（`45009`）、IP 白名单（`40164`）或权限错误（`48001`）则立即熔断报错。
-- **本地离线预览与一键复制**：
-  - `md2posts preview <slug>`：在零外部 API 请求下生成带手机边框模拟与**「一键复制富文本」按钮**的独立 HTML 文件（本地图片已内联为 Base64），双击即可在浏览器预览并一键复制到公众号后台粘贴；
-  - `md2posts preview <slug> --to heybox`：自动将代码块渲染为高清深色卡片图（Base64 内联）、裁切 16:9 封面并自动映射小黑盒规范的 H2/H3 标题，双击打开 `preview.html` 即可一键复制小黑盒富文本，在小黑盒「发布文章」编辑区直接 `Ctrl+V` 即可完美就位。
-
----
-
-## 目录结构
-
-```text
-md2posts/
-├── packages/
-│   ├── wechat-sdk/                # @md2posts/wechat-sdk：微信公众平台 API SDK（诊断、素材、草稿箱）
-│   ├── heybox-sdk/                # @md2posts/heybox-sdk：小黑盒专属 SDK（代码卡片图生成、16:9 封面、发布器）
-│   ├── renderer/                  # @md2posts/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
-│   ├── sources/                   # @md2posts/sources：文件系统文章源适配器 + 复合 SHA-256 计算
-│   ├── sync-core/                 # @md2posts/sync-core：多平台统一同步管线、进程锁状态存储与通知
-│   └── cli/                       # @md2posts/cli：命令行入口与终端交互呈现
-├── systemd/                       # systemd 每日定时服务单元与一键环境配置脚本
-└── config.yaml.example            # 完整配置文件模板
-```
+| 发布平台 | 核心特性 | 解决痛点 |
+|---|---|---|
+| **微信公众号** (`wechat`) | 28 套内置排版主题、安全 Section 列表、代码块逐行高亮、外链转文末角标脚注、WebP 自适应压缩上传 | 彻底解决微信后台格式错乱、吞代码换行、图片超限问题 |
+| **小黑盒社区** (`heybox`) | **代码块/表格自动转深色卡片图**、16:9 封面智能裁切、ProseMirror H2/H3 规范对齐、支持直推草稿箱 | 彻底解决小黑盒 App 移动端代码折行拍扁的顽疾 |
 
 ---
 
 ## 快速开始
 
-### 1. 安装、构建与测试
+### 1. 安装与构建
 
 环境要求：**Node.js >= 20**，**pnpm >= 10**。
 
 ```bash
 pnpm install
 pnpm build
-pnpm test
 ```
 
-### 2. 配置凭据与博客信息
+### 2. 初始化配置文件
 
-复制 `config.yaml.example` 为 `config.yaml`，填入你的博客仓库地址与网站信息，并通过环境变量传入公众号密钥（切勿将密钥提交进代码库）：
+复制模板并编辑你的博客路径与发布凭据：
 
 ```bash
 cp config.yaml.example config.yaml
 nano config.yaml
-
-export WECHAT_APPID="wx_你的AppID"
-export WECHAT_SECRET="你的AppSecret"
 ```
 
-### 3. 运行微信权限与 IP 白名单诊断
-
-```bash
-pnpm cli diagnose
-# 或: node packages/cli/dist/index.js diagnose
-```
-
-诊断命令将依次验证：
-1. **凭据格式**（AppID / AppSecret）；
-2. **Access Token 与出口 IP 白名单**（若未加白名单，会从 `40164` 报错中自动提取并打印当前服务器出口 IP）；
-3. **草稿箱接口权限**（调用 `draft/count` 验证当前账号是否可正常使用草稿箱 API）。
+> **小黑盒账号绑定**（支持本地扫码或同步到 VPS）：
+> ```bash
+> # 本机打开浏览器扫码一次即可持久化登录态
+> xiaoheihe login --browser chrome
+> ```
 
 ---
 
-## CLI 命令指南
+## 常用 CLI 命令
+
+所有命令均支持 `pnpm cli <command>`：
 
 ```bash
-# 1. 查看内置的 28 套公众号排版主题
-pnpm cli themes
-
-# 2. 离线扫描与状态检查（零微信网络请求）
-# 区分展示【新增待自动同步】与【历史文章已修改（可手动选推）】
+# 1. 扫描博客状态（零网络请求，区分【新增待推】与【历史已修改】）
 pnpm cli check
 
-# 3. 本地离线排版预览
-pnpm cli preview my-post-slug                               # 微信公众号 HTML 预览（带一键复制富文本）
-pnpm cli preview my-post-slug --to heybox                  # 小黑盒发布包预览（含代码转图与 16:9 封面）
+# 2. 本地离线排版预览（无需网络凭据，双击 preview.html 即可在浏览器一键复制富文本）
+pnpm cli preview my-post --to wechat      # 微信公众号手机框预览
+pnpm cli preview my-post --to heybox      # 小黑盒发布包预览（含代码卡片图）
 
-# 4. 建立历史文章基线（首次启用前运行，跳过存量老文章）
-pnpm cli baseline                              # 将全部现有已发布文章设为基线
-pnpm cli baseline post-1 post-2                # 仅将指定的某几篇设为基线
-pnpm cli baseline --except new-post-slug       # 除指定文章外全部设为基线
-pnpm cli baseline --remote                     # 设为基线并从微信草稿箱拉取现有草稿自动绑定 draftMediaId
+# 3. 按需单篇或批量推送
+pnpm cli push my-post --to wechat         # 推送单篇至微信公众号草稿箱
+pnpm cli push my-post --to heybox         # 推送单篇至小黑盒草稿箱
+pnpm cli push my-post --to all            # 单命令一键双端推送
+pnpm cli push -i --dry-run                # 进入终端交互式勾选列表模拟演练
 
-# 5. 手动或交互式选择文章推送到草稿箱
-pnpm cli push                                 # 进入交互式列表勾选
-pnpm cli push --filter tutorial               # 按关键词筛选后勾选
-pnpm cli push my-post-slug                    # 推送单篇至微信草稿箱
-pnpm cli push my-post-slug --to heybox        # 推送单篇至小黑盒草稿箱
-pnpm cli push my-post-slug --to all           # 一键推送到微信 + 小黑盒
-pnpm cli push post-1 post-2                   # 一次指定多篇批量推送
-pnpm cli push my-post-slug --dry-run          # 模拟演练模式（不发真实写请求）
-
-# 6. 自动增量同步（默认仅推送【新发表文章】，忽略老文章修改）
-pnpm cli sync                                 # 按 config.yaml 配置的目标平台自动同步
-pnpm cli sync --to all                        # 强制同步至全部平台（微信 + 小黑盒）
-pnpm cli sync --include-updated               # 破例将修改过的老文章也一并同步
-pnpm cli sync --pull                          # 立即强制拉取远程博客仓库更新（绕过 24h 冷却）
+# 4. 每日定时增量同步（默认只推送新发表文章，不刷屏历史修改）
+pnpm cli sync --to all                    # 增量推送新文章到全部平台
 ```
-
-### 交互式勾选输入语法（`md2posts push`）
-
-不带参数运行 `push`（或加 `-i` / `--select`）时，终端会优先置顶展示 `🆕 新增` 与 `✏️ 已修改` 文章，支持输入：
-- **单个或多个序号**：`1` 或 `1,3,5`
-- **序号区间**：`1-4`
-- **快捷指令**：`new`（全选新增文章）、`updated`（全选已修改文章）
-- **直接输入 Slug**：`my-post-slug`
-- **取消退出**：`q`
 
 ---
 
-## VPS 每日定时后台服务部署 (`systemd`)
+## 无桌面 Linux VPS 部署指南
 
-在固定公网 IP（已加入公众号白名单）的 Linux VPS 上，可通过 `systemd timer` 每天定时运行一次（24 小时检查一次，无需开放任何入站端口）：
+### 1. 解决小黑盒无桌面扫码问题
+
+Linux VPS 通常没有图形桌面，最推荐的做法是**将本地登录凭据同步至服务器**：
 
 ```bash
-# 1. 构建并归档存量历史文章
-pnpm install && pnpm build
-node cli/dist/index.js baseline
+# 步骤 1：在有屏幕的本地电脑（Windows / Mac）上完成扫码登录
+xiaoheihe login --browser chrome
 
-# 2. 一键注册并启动 systemd 定时服务（自动检测当前仓库、node 与用户环境路径，设置 24h 定时器）
+# 步骤 2：直接将生成的 session.json 传到 VPS 的配置目录即可（免去 VPS 打开浏览器的烦恼）
+# Windows PowerShell:
+scp $env:LOCALAPPDATA\xiaoheihe-cli\session.json user@your-vps-ip:~/.config/xiaoheihe-cli/session.json
+
+# Linux / macOS:
+# scp ~/.config/xiaoheihe-cli/session.json user@your-vps-ip:~/.config/xiaoheihe-cli/session.json
+```
+在 VPS 上执行 `xiaoheihe auth status` 确认显示 `authenticated: true` 即可！
+
+### 2. 安装 systemd 定时任务（每日自动检查并推流）
+
+```bash
+# 一键安装后台定时服务（自动检测用户环境 PATH、Node、flock 与 config.yaml）
 bash systemd/install-systemd.sh
 
-# 3. 写入平台密钥与配置（权限已设为 600）
-sudo nano /etc/md2posts/md2posts.env
-
-# 4. 手动触发一次并查看实时日志
-sudo systemctl start md2posts-sync.service
+# 查看定时器状态与运行日志
+systemctl status md2posts-sync.timer
 journalctl -u md2posts-sync.service -n 50 -f
 
-# 5. 卸载服务与定时器（按需）
-bash systemd/uninstall-systemd.sh          # 停止并移除 systemd 单元（保留 /etc/md2posts 密钥文件）
-bash systemd/uninstall-systemd.sh --purge  # 彻底清除服务并删除 /etc/md2posts 凭据目录
+# 卸载服务（按需）
+bash systemd/uninstall-systemd.sh [--purge]
 ```
 
-并发安全由外层 Linux `flock` 与内层 `StateStore.withLock()`（带 PID 存活检测的 `.lock` 文件）双重保障。
+---
+
+## 项目架构与子包
+
+```text
+md2posts/
+├── packages/
+│   ├── wechat-sdk/     # 微信公众平台 API Client（Token 管理、素材上传、草稿箱，零依赖）
+│   ├── heybox-sdk/     # 小黑盒专属 SDK（代码卡片图渲染、16:9 封面裁剪、推流发布）
+│   ├── renderer/       # Markdown 渲染与 AST 预处理（28 套精美主题）
+│   ├── sources/        # 静态博客文件系统适配器（Hugo/Hexo 等、复合 SHA-256 计算）
+│   ├── sync-core/      # 核心多平台同步编排引擎与状态管理
+│   └── cli/            # 终端命令行交互入口
+├── systemd/            # Linux 定时后台服务套件
+└── config.yaml.example # 配置文件模板
+```
 
 ---
 
 ## 致谢与许可
 
 - 微信排版渲染核心（`renderer/vendor/`）移植自 [laogou717/md-wechat](https://github.com/laogou717/md-wechat)（MIT 许可证）。
-- 小黑盒社区交互与发帖设计参考自 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)（MIT 许可证，感谢原作者及维护者的开源贡献）。
+- 小黑盒社区交互与发帖设计参考自 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)（MIT 许可证，特别感谢原作者及维护者的开源贡献）。
 - 本项目基于 MIT 许可证开源。
