@@ -74,7 +74,7 @@ md2posts/
 │   ├── sync-core/                 # @md2posts/sync-core: Multi-platform sync pipeline, lockfile state store & notifier
 │   └── cli/                       # @md2posts/cli: CLI entry point & terminal presentations
 ├── systemd/                       # systemd daily service, timer & one-step environment installer script
-└── config.example.yaml            # Full configuration template
+└── config.yaml.example            # Full configuration template
 ```
 
 ---
@@ -93,10 +93,10 @@ pnpm test
 
 ### 2. Configure
 
-Copy `config.example.yaml` to `config.yaml` and set your blog repository URL (`repoUrl`) and site URL (`url`). Pass WeChat credentials via environment variables (never commit secrets):
+Copy `config.yaml.example` to `config.yaml` and set your blog repository URL (`repoUrl`) and site URL (`url`). Pass WeChat credentials via environment variables (never commit secrets):
 
 ```bash
-cp config.example.yaml config.yaml
+cp config.yaml.example config.yaml
 nano config.yaml
 
 export WECHAT_APPID="wx_your_appid"

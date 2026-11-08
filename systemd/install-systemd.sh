@@ -23,12 +23,16 @@ echo "==> 运行用户:     ${RUN_USER} (Home: ${USER_HOME})"
 
 # 1. 检查并确保配置文件就绪
 if [[ ! -f "${REPO_DIR}/config.yaml" ]]; then
-  if [[ -f "${REPO_DIR}/config.example.yaml" ]]; then
+  if [[ -f "${REPO_DIR}/config.yaml.example" ]]; then
+    echo "==> 未检测到 config.yaml，自动从 config.yaml.example 创建..."
+    cp "${REPO_DIR}/config.yaml.example" "${REPO_DIR}/config.yaml"
+    echo "    👉 请记得编辑 ${REPO_DIR}/config.yaml 填入您的博客仓库与平台设置"
+  elif [[ -f "${REPO_DIR}/config.example.yaml" ]]; then
     echo "==> 未检测到 config.yaml，自动从 config.example.yaml 创建..."
     cp "${REPO_DIR}/config.example.yaml" "${REPO_DIR}/config.yaml"
     echo "    👉 请记得编辑 ${REPO_DIR}/config.yaml 填入您的博客仓库与平台设置"
   else
-    echo "错误: 未找到 config.yaml 或 config.example.yaml" >&2
+    echo "错误: 未找到 config.yaml 或 config.yaml.example" >&2
     exit 1
   fi
 fi

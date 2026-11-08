@@ -96,9 +96,12 @@ export function loadConfig(configPath?: string): AppConfig {
     : path.resolve(process.cwd(), 'config.yaml');
 
   if (!configPath && !fs.existsSync(resolvedPath)) {
-    const examplePath = path.resolve(process.cwd(), 'config.example.yaml');
-    if (fs.existsSync(examplePath)) {
-      resolvedPath = examplePath;
+    const canonicalExample = path.resolve(process.cwd(), 'config.yaml.example');
+    const legacyExample = path.resolve(process.cwd(), 'config.example.yaml');
+    if (fs.existsSync(canonicalExample)) {
+      resolvedPath = canonicalExample;
+    } else if (fs.existsSync(legacyExample)) {
+      resolvedPath = legacyExample;
     }
   }
   const configDir = path.dirname(resolvedPath);
@@ -116,7 +119,7 @@ export function loadConfig(configPath?: string): AppConfig {
       parsed = YAML.parse(rawYaml) || {};
     } catch (err: any) {
       console.warn(`[配置警告] 配置文件 ${resolvedPath} 解析失败 (YAML 语法/缩进错误): ${err.message}`);
-      console.warn(`           建议重新执行 \`cp config.example.yaml config.yaml\` 进行重置。\n`);
+      console.warn(`           建议重新执行 \`cp config.yaml.example config.yaml\` 进行重置。\n`);
       parsed = {};
     }
   }

@@ -1,4 +1,4 @@
-# md2posts 配置文件模板 (config.example.yaml)
+# md2posts 配置文件模板 (config.yaml.example)
 
 source:
   type: fs

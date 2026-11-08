@@ -73,7 +73,7 @@ md2posts/
 │   ├── sync-core/                 # @md2posts/sync-core：多平台统一同步管线、进程锁状态存储与通知
 │   └── cli/                       # @md2posts/cli：命令行入口与终端交互呈现
 ├── systemd/                       # systemd 每日定时服务单元与一键环境配置脚本
-└── config.example.yaml            # 完整配置文件模板
+└── config.yaml.example            # 完整配置文件模板
 ```
 
 ---
@@ -92,10 +92,10 @@ pnpm test
 
 ### 2. 配置凭据与博客信息
 
-复制 `config.example.yaml` 为 `config.yaml`，填入你的博客仓库地址与网站信息，并通过环境变量传入公众号密钥（切勿将密钥提交进代码库）：
+复制 `config.yaml.example` 为 `config.yaml`，填入你的博客仓库地址与网站信息，并通过环境变量传入公众号密钥（切勿将密钥提交进代码库）：
 
 ```bash
-cp config.example.yaml config.yaml
+cp config.yaml.example config.yaml
 nano config.yaml
 
 export WECHAT_APPID="wx_你的AppID"
