@@ -66,13 +66,14 @@
 
 ```text
 md2posts/
-├── wechat-sdk/                    # @md2posts/wechat-sdk: WeChat Official Account API SDK (diagnose, material, drafts)
-├── heybox-sdk/                    # @md2posts/heybox-sdk: XiaoHeiHe (HeyBox) SDK, code card generator, 16:9 banner & publisher
-├── renderer/                      # @md2posts/renderer: Vendored md-wechat engine + AST-aware preprocessor
-├── sources/                       # @md2posts/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
-├── sync-core/                     # @md2posts/sync-core: Image processor (sharp), lockfile state store, pipeline & webhook notifier
-├── cli/                           # @md2posts/cli: CLI entry point
-├── systemd/                       # systemd daily service, timer & one-step installer script
+├── packages/
+│   ├── wechat-sdk/                # @md2posts/wechat-sdk: WeChat Official Account API SDK (diagnose, material, drafts)
+│   ├── heybox-sdk/                # @md2posts/heybox-sdk: XiaoHeiHe (HeyBox) SDK, code card generator, 16:9 banner & publisher
+│   ├── renderer/                  # @md2posts/renderer: Vendored md-wechat engine + AST-aware preprocessor
+│   ├── sources/                   # @md2posts/sources: Filesystem adapter (bundle & flat layouts) + composite SHA-256
+│   ├── sync-core/                 # @md2posts/sync-core: Multi-platform sync pipeline, lockfile state store & notifier
+│   └── cli/                       # @md2posts/cli: CLI entry point & terminal presentations
+├── systemd/                       # systemd daily service, timer & one-step environment installer script
 └── config.example.yaml            # Full configuration template
 ```
 
@@ -107,7 +108,8 @@ export WECHAT_SECRET="your_appsecret"
 Verify credentials, server egress IP whitelist status, and Draft Box API permissions (`draft/count`):
 
 ```bash
-node cli/dist/index.js diagnose
+pnpm cli diagnose
+# Or: node packages/cli/dist/index.js diagnose
 ```
 
 > If your server IP is not yet whitelisted, `diagnose` extracts and prints the exact egress IP reported by WeChat (`40164`) so you can add it in the WeChat Official Account console under **Development -> Basic Configuration -> IP Whitelist**.
@@ -118,35 +120,36 @@ node cli/dist/index.js diagnose
 
 ```bash
 # 1. List all 28 built-in WeChat typography themes
-node cli/dist/index.js themes
+pnpm cli themes
 
 # 2. Offline status check (zero WeChat API calls)
 # Reports brand-new posts (queued for auto-sync) and modified historical posts (manual push)
-node cli/dist/index.js check
+pnpm cli check
 
 # 3. Generate standalone local preview
-node cli/dist/index.js preview my-post-slug                               # WeChat HTML preview with one-click copy
-node cli/dist/index.js preview my-post-slug --to heybox                  # XiaoHeiHe bundle preview (code-to-image + 16:9 cover)
+pnpm cli preview my-post-slug                               # WeChat HTML preview with one-click copy
+pnpm cli preview my-post-slug --to heybox                  # XiaoHeiHe bundle preview (code-to-image + 16:9 cover)
 
 # 4. Mark existing published posts as baselined (skip historical posts on routine auto-sync)
-node cli/dist/index.js baseline                              # Baseline all existing published posts
-node cli/dist/index.js baseline post-1 post-2                # Baseline specific posts only
-node cli/dist/index.js baseline --except new-post-slug       # Baseline all except specified post(s)
-node cli/dist/index.js baseline --remote                     # Baseline & pull existing WeChat Draft Box media_ids into state.json
+pnpm cli baseline                              # Baseline all existing published posts
+pnpm cli baseline post-1 post-2                # Baseline specific posts only
+pnpm cli baseline --except new-post-slug       # Baseline all except specified post(s)
+pnpm cli baseline --remote                     # Baseline & pull existing WeChat Draft Box media_ids into state.json
 
 # 5. Interactive or targeted push to Draft Box
-node cli/dist/index.js push                                 # Interactive numbered picker
-node cli/dist/index.js push --filter tutorial               # Interactive picker filtered by keyword
-node cli/dist/index.js push my-post-slug                    # Push a single post to WeChat
-node cli/dist/index.js push my-post-slug --to heybox        # Push/export to XiaoHeiHe
-node cli/dist/index.js push my-post-slug --to all           # Push to both WeChat & XiaoHeiHe
-node cli/dist/index.js push post-1 post-2                   # Push multiple posts in batch
-node cli/dist/index.js push my-post-slug --dry-run          # Dry-run without calling write APIs
+pnpm cli push                                 # Interactive numbered picker
+pnpm cli push --filter tutorial               # Interactive picker filtered by keyword
+pnpm cli push my-post-slug                    # Push a single post to WeChat
+pnpm cli push my-post-slug --to heybox        # Push a single post to XiaoHeiHe
+pnpm cli push my-post-slug --to all           # Push to both WeChat & XiaoHeiHe
+pnpm cli push post-1 post-2                   # Push multiple posts in batch
+pnpm cli push my-post-slug --dry-run          # Dry-run without calling write APIs
 
 # 6. Automated incremental sync (pushes brand-new posts only by default, up to maxPerRun)
-node cli/dist/index.js sync
-node cli/dist/index.js sync --include-updated       # Also sync modified historical posts
-node cli/dist/index.js sync --pull                  # Force pull remote repository now (bypass 24h cooldown)
+pnpm cli sync                                 # Automatically syncs to target platform(s) configured in config.yaml
+pnpm cli sync --to all                        # Force sync to both WeChat & XiaoHeiHe
+pnpm cli sync --include-updated               # Also sync modified historical posts
+pnpm cli sync --pull                          # Force pull remote repository now (bypass 24h cooldown)
 ```
 
 ### Interactive Selection Syntax (`md2posts push`)

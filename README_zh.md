@@ -65,13 +65,14 @@
 
 ```text
 md2posts/
-├── wechat-sdk/                    # @md2posts/wechat-sdk：微信公众平台 API SDK（诊断、素材、草稿箱）
-├── heybox-sdk/                    # @md2posts/heybox-sdk：小黑盒专属 SDK（代码卡片图生成、16:9 封面、专区推断、发布器）
-├── renderer/                      # @md2posts/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
-├── sources/                       # @md2posts/sources：文件系统文章源适配器 + 复合 SHA-256 计算
-├── sync-core/                     # @md2posts/sync-core：sharp 图片处理、进程锁状态存储、微信同步流水线与 Webhook 通知
-├── cli/                           # @md2posts/cli：命令行入口
-├── systemd/                       # systemd 每日定时服务单元与一键安装脚本
+├── packages/
+│   ├── wechat-sdk/                # @md2posts/wechat-sdk：微信公众平台 API SDK（诊断、素材、草稿箱）
+│   ├── heybox-sdk/                # @md2posts/heybox-sdk：小黑盒专属 SDK（代码卡片图生成、16:9 封面、发布器）
+│   ├── renderer/                  # @md2posts/renderer：Vendor md-wechat 渲染引擎 + AST 预处理器
+│   ├── sources/                   # @md2posts/sources：文件系统文章源适配器 + 复合 SHA-256 计算
+│   ├── sync-core/                 # @md2posts/sync-core：多平台统一同步管线、进程锁状态存储与通知
+│   └── cli/                       # @md2posts/cli：命令行入口与终端交互呈现
+├── systemd/                       # systemd 每日定时服务单元与一键环境配置脚本
 └── config.example.yaml            # 完整配置文件模板
 ```
 
@@ -104,7 +105,8 @@ export WECHAT_SECRET="你的AppSecret"
 ### 3. 运行微信权限与 IP 白名单诊断
 
 ```bash
-node cli/dist/index.js diagnose
+pnpm cli diagnose
+# 或: node packages/cli/dist/index.js diagnose
 ```
 
 诊断命令将依次验证：
@@ -118,35 +120,36 @@ node cli/dist/index.js diagnose
 
 ```bash
 # 1. 查看内置的 28 套公众号排版主题
-node cli/dist/index.js themes
+pnpm cli themes
 
 # 2. 离线扫描与状态检查（零微信网络请求）
 # 区分展示【新增待自动同步】与【历史文章已修改（可手动选推）】
-node cli/dist/index.js check
+pnpm cli check
 
 # 3. 本地离线排版预览
-node cli/dist/index.js preview my-post-slug                               # 微信公众号 HTML 预览（带一键复制富文本）
-node cli/dist/index.js preview my-post-slug --to heybox                  # 小黑盒发布包预览（含代码转图与 16:9 封面）
+pnpm cli preview my-post-slug                               # 微信公众号 HTML 预览（带一键复制富文本）
+pnpm cli preview my-post-slug --to heybox                  # 小黑盒发布包预览（含代码转图与 16:9 封面）
 
 # 4. 建立历史文章基线（首次启用前运行，跳过存量老文章）
-node cli/dist/index.js baseline                              # 将全部现有已发布文章设为基线
-node cli/dist/index.js baseline post-1 post-2                # 仅将指定的某几篇设为基线
-node cli/dist/index.js baseline --except new-post-slug       # 除指定文章外全部设为基线
-node cli/dist/index.js baseline --remote                     # 设为基线并从微信草稿箱拉取现有草稿自动绑定 draftMediaId
+pnpm cli baseline                              # 将全部现有已发布文章设为基线
+pnpm cli baseline post-1 post-2                # 仅将指定的某几篇设为基线
+pnpm cli baseline --except new-post-slug       # 除指定文章外全部设为基线
+pnpm cli baseline --remote                     # 设为基线并从微信草稿箱拉取现有草稿自动绑定 draftMediaId
 
 # 5. 手动或交互式选择文章推送到草稿箱
-node cli/dist/index.js push                                 # 进入交互式列表勾选
-node cli/dist/index.js push --filter tutorial               # 按关键词筛选后勾选
-node cli/dist/index.js push my-post-slug                    # 推送单篇至微信草稿箱
-node cli/dist/index.js push my-post-slug --to heybox        # 推送/导出单篇至小黑盒
-node cli/dist/index.js push my-post-slug --to all           # 一键推送到微信 + 小黑盒
-node cli/dist/index.js push post-1 post-2                   # 一次指定多篇批量推送
-node cli/dist/index.js push my-post-slug --dry-run          # 模拟演练模式（不发真实写请求）
+pnpm cli push                                 # 进入交互式列表勾选
+pnpm cli push --filter tutorial               # 按关键词筛选后勾选
+pnpm cli push my-post-slug                    # 推送单篇至微信草稿箱
+pnpm cli push my-post-slug --to heybox        # 推送单篇至小黑盒草稿箱
+pnpm cli push my-post-slug --to all           # 一键推送到微信 + 小黑盒
+pnpm cli push post-1 post-2                   # 一次指定多篇批量推送
+pnpm cli push my-post-slug --dry-run          # 模拟演练模式（不发真实写请求）
 
 # 6. 自动增量同步（默认仅推送【新发表文章】，忽略老文章修改）
-node cli/dist/index.js sync
-node cli/dist/index.js sync --include-updated       # 破例将修改过的老文章也一并同步
-node cli/dist/index.js sync --pull                  # 立即强制拉取远程博客仓库更新（绕过 24h 冷却）
+pnpm cli sync                                 # 按 config.yaml 配置的目标平台自动同步
+pnpm cli sync --to all                        # 强制同步至全部平台（微信 + 小黑盒）
+pnpm cli sync --include-updated               # 破例将修改过的老文章也一并同步
+pnpm cli sync --pull                          # 立即强制拉取远程博客仓库更新（绕过 24h 冷却）
 ```
 
 ### 交互式勾选输入语法（`md2posts push`）

@@ -6,8 +6,10 @@ export interface PostSyncState {
   contentHash: string;
   title: string;
   draftMediaId?: string;
+  heyboxDraftId?: string;
   status: 'baselined' | 'synced';
   pushedAt: string;
+  heyboxSyncedAt?: string;
 }
 
 export interface ImageCacheEntry {

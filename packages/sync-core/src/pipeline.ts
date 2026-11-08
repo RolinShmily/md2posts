@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { WeChatClient, WeChatError } from '@md2posts/wechat-sdk';
+import {
+  HeyBoxClient,
+  HeyBoxPublisher,
+  type HeyBoxPublishResult,
+  type HeyBoxPreparedResult,
+} from '@md2posts/heybox-sdk';
 import { renderArticle, preprocessMarkdown } from '@md2posts/renderer';
 import { FsSource, SourcePost, findGitRoot } from '@md2posts/sources';
 import { StateStore } from './state-store.js';
@@ -38,6 +44,18 @@ export interface PushResult {
   mediaId: string;
   isUpdate: boolean;
   warnings: string[];
+  wechat?: PushResult;
+  heybox?: HeyBoxPublishResult;
+}
+
+export interface PipelinePreviewResult {
+  post: SourcePost;
+  target: 'wechat' | 'heybox';
+  articleHtml?: string;
+  fullPageHtml: string;
+  warnings: string[];
+  normalizedTitle: string;
+  heybox?: { bundleDir: string; prepared: HeyBoxPreparedResult };
 }
 
 export interface SyncReport {
@@ -70,8 +88,13 @@ export class SyncPipeline {
   private readonly stateStore: StateStore;
   private readonly imageProcessor: ImageProcessor;
   private readonly wechatClient: WeChatClient;
+  private readonly heyboxPublisher: HeyBoxClient;
 
-  constructor(config: AppConfig, wechatClient?: WeChatClient) {
+  constructor(
+    config: AppConfig,
+    wechatClient?: WeChatClient,
+    heyboxPublisher?: HeyBoxClient
+  ) {
     this.config = config;
     this.source = new FsSource(config.source);
     this.stateStore = new StateStore(config.sync.stateFile);
@@ -83,6 +106,15 @@ export class SyncPipeline {
       new WeChatClient({
         appId: config.wechat.appId,
         appSecret: config.wechat.appSecret,
+      });
+    this.heyboxPublisher =
+      heyboxPublisher ||
+      new HeyBoxPublisher({
+        assetRoots: config.source.assetRoots,
+        defaultCoverPath: config.sync.defaultCover,
+        sessionFile: config.heybox?.sessionFile,
+        browserChannel: config.heybox?.browserChannel,
+        headless: config.heybox?.headless,
       });
   }
 
@@ -119,53 +151,40 @@ export class SyncPipeline {
         imageCaptionMode: this.config.render.imageCaptionMode,
       });
 
-      if (post.draft) {
-        drafts++;
-        items.push({
-          id: post.id,
-          title: post.title,
-          normalizedTitle: normalizeWeChatTitle(post.title).title,
-          status: 'draft',
-          publishedAt: post.publishedAt,
-          imageCount: pre.imageRefs.length,
-          hasCover: Boolean(post.coverRaw),
-          warningsCount: pre.warnings.length,
-        });
-        continue;
-      }
-
+      const { title: normTitle } = normalizeWeChatTitle(post.title);
       const state = this.stateStore.getPost(post.id);
-      let status: CheckPostItem['status'];
 
-      if (!state) {
+      let status: CheckPostItem['status'] = 'new';
+      if (post.draft) {
+        status = 'draft';
+        drafts++;
+      } else if (!state) {
         status = 'new';
         newCount++;
       } else if (state.status === 'baselined') {
-        if (state.contentHash !== post.contentHash) {
-          status = 'updated';
-          updatedCount++;
-        } else {
+        if (state.contentHash === post.contentHash) {
           status = 'baselined';
           baselinedCount++;
-        }
-      } else {
-        if (state.contentHash !== post.contentHash) {
+        } else {
           status = 'updated';
           updatedCount++;
-        } else {
-          status = 'unchanged';
-          unchangedCount++;
         }
+      } else if (state.contentHash === post.contentHash) {
+        status = 'unchanged';
+        unchangedCount++;
+      } else {
+        status = 'updated';
+        updatedCount++;
       }
 
       items.push({
         id: post.id,
         title: post.title,
-        normalizedTitle: normalizeWeChatTitle(post.title).title,
+        normalizedTitle: normTitle,
         status,
         publishedAt: post.publishedAt,
         imageCount: pre.imageRefs.length,
-        hasCover: Boolean(post.coverRaw),
+        hasCover: Boolean(post.coverRaw || post.localAssetPaths.length > 0 || this.config.sync.defaultCover),
         warningsCount: pre.warnings.length,
       });
     }
@@ -183,18 +202,14 @@ export class SyncPipeline {
   }
 
   /**
-   * Marks existing posts as baselined so they won't be pushed on routine runs.
-   * When `pullRemoteDrafts` is true, ONLY fetches existing drafts (`draft/batchget`) and
-   * published articles (`freepublish/batchget`) from WeChat, matches them against local posts
-   * by `content_source_url` or title, and writes the matched entries into `state.json`.
+   * Marks historical posts as baselined so routine sync ignores them.
    */
   public async baseline(
     options: {
-      beforeDate?: string;
       exceptSlug?: string;
       onlySlugs?: string[];
-      pullRemoteDrafts?: boolean;
-      forcePull?: boolean;
+      beforeDate?: string;
+      remote?: boolean;
     } = {}
   ): Promise<{
     baselinedCount: number;
@@ -203,31 +218,41 @@ export class SyncPipeline {
     publishListUnauthorized: boolean;
   }> {
     return await this.stateStore.withLock(async () => {
-      await this.prepare({ forcePull: options.forcePull });
+      await this.prepare();
       const posts = await this.source.scanPosts();
 
-      const matchLocalPost = (remoteUrl?: string, remoteTitle?: string): SourcePost | undefined => {
-        const cleanUrl = (remoteUrl || '').trim();
-        const cleanTitle = (remoteTitle || '').trim();
-        return posts.find((p) => {
-          if (p.draft) return false;
-          if (cleanUrl && (cleanUrl === p.canonicalUrl || cleanUrl.includes(`/posts/${p.id}`))) {
-            return true;
-          }
-          if (!cleanTitle) return false;
-          const normTitle = normalizeWeChatTitle(p.title).title;
-          return cleanTitle === p.title || cleanTitle === normTitle;
-        });
-      };
-
-      if (options.pullRemoteDrafts) {
+      if (options.remote) {
         let matchedDraftCount = 0;
         let matchedPublishedCount = 0;
         let publishListUnauthorized = false;
-        const pageSize = 20;
         const now = new Date().toISOString();
+        const pageSize = 20;
 
-        // 1. Fetch from WeChat Draft Box (cgi-bin/draft/batchget)
+        const urlToPost = new Map<string, SourcePost>();
+        const titleToPost = new Map<string, SourcePost>();
+
+        for (const post of posts) {
+          if (post.canonicalUrl) {
+            urlToPost.set(post.canonicalUrl.replace(/\/+$/, ''), post);
+          }
+          urlToPost.set(post.id, post);
+          titleToPost.set(post.title.trim(), post);
+          const { title: norm } = normalizeWeChatTitle(post.title);
+          titleToPost.set(norm.trim(), post);
+        }
+
+        const matchLocalPost = (contentSourceUrl?: string, title?: string): SourcePost | undefined => {
+          if (contentSourceUrl) {
+            const clean = contentSourceUrl.replace(/\/+$/, '');
+            if (urlToPost.has(clean)) return urlToPost.get(clean);
+          }
+          if (title) {
+            const trimmed = title.trim();
+            if (titleToPost.has(trimmed)) return titleToPost.get(trimmed);
+          }
+          return undefined;
+        };
+
         let draftOffset = 0;
         while (true) {
           const batch = await this.wechatClient.draft.batchGet(draftOffset, pageSize, 1);
@@ -258,7 +283,6 @@ export class SyncPipeline {
           }
         }
 
-        // 2. Also attempt to fetch from WeChat Published Articles (cgi-bin/freepublish/batchget)
         try {
           let pubOffset = 0;
           while (true) {
@@ -304,7 +328,6 @@ export class SyncPipeline {
         };
       }
 
-      // Offline baseline mode: mark selected/all local posts as baselined
       const exceptSet = new Set(
         (options.exceptSlug || '')
           .split(/[\s,]+/)
@@ -342,48 +365,60 @@ export class SyncPipeline {
   }
 
   /**
-   * Previews a post locally, generating clean WeChat HTML with standalone page wrapper for browser inspection.
+   * Generates offline local preview for a post without external network requests.
+   * Supports target: 'wechat' (default) or 'heybox'.
    */
-  public async preview(slug: string): Promise<{
-    post: SourcePost;
-    articleHtml: string;
-    fullPageHtml: string;
-    warnings: string[];
-    normalizedTitle: string;
-  }> {
+  public async preview(
+    slug: string,
+    options: { to?: 'wechat' | 'heybox'; theme?: string; output?: string } = {}
+  ): Promise<PipelinePreviewResult> {
+    const target = (options.to || 'wechat').toLowerCase() as 'wechat' | 'heybox';
     const post = await this.source.getPost(slug);
     if (!post) {
-      throw new Error(`[Pipeline] Post not found: ${slug}`);
+      throw new Error(`[Pipeline] 未找到文章: ${slug}`);
     }
 
+    // 1. HeyBox Preview
+    if (target === 'heybox') {
+      const { bundleDir, prepared } = await this.heyboxPublisher.exportPackage(post, options.output);
+      return {
+        post,
+        target: 'heybox',
+        fullPageHtml: prepared.previewHtml,
+        warnings: [],
+        normalizedTitle: prepared.title,
+        heybox: { bundleDir, prepared },
+      };
+    }
+
+    // 2. WeChat Preview
     const { title: normTitle } = normalizeWeChatTitle(post.title);
     const assetRoots = this.config.source.assetRoots || ['{postDir}'];
 
-    // Collect image references via preprocessor and map local files to base64 data URIs
-    const pre = preprocessMarkdown(post.bodyMarkdown, {
+    const imageMap = new Map<string, string>();
+    const preRes = preprocessMarkdown(post.bodyMarkdown, {
       siteUrl: this.config.site.url,
       postCanonicalUrl: post.canonicalUrl,
       shiftBodyHeadings: this.config.render.shiftBodyHeadings,
       imageCaptionMode: this.config.render.imageCaptionMode,
     });
 
-    const imageMap = new Map<string, string>();
-    for (const ref of pre.imageRefs) {
+    for (const ref of preRes.imageRefs) {
       const localPath = resolveLocalAssetPath(ref, post.postDir, assetRoots);
-      if (localPath) {
+      if (localPath && fs.existsSync(localPath)) {
         try {
-          const fileBuf = fs.readFileSync(localPath);
+          const buf = fs.readFileSync(localPath);
           const mime = getMimeType(localPath);
-          const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
-          imageMap.set(ref, dataUrl);
+          imageMap.set(ref, `data:${mime};base64,${buf.toString('base64')}`);
         } catch {
-          // ignore
+          imageMap.set(ref, ref);
         }
       }
     }
 
+    const themeToUse = options.theme || this.config.render.theme;
     const renderRes = renderArticle(post.bodyMarkdown, {
-      themeId: this.config.render.theme,
+      themeId: themeToUse,
       accent: this.config.render.accent,
       fontSize: this.config.render.fontSize,
       fontFamily: this.config.render.fontFamily,
@@ -391,6 +426,7 @@ export class SyncPipeline {
       galleryMode: this.config.render.galleryMode,
       linksToFootnotes: this.config.render.linksToFootnotes,
       imageMap,
+      headerCoverUrl: undefined,
       footerCard: this.config.render.appendCopyrightCard
         ? {
             title: post.title,
@@ -412,7 +448,7 @@ export class SyncPipeline {
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtmlAttr(normTitle)} - 微信排版预览</title>
   <style>
     body {
@@ -487,6 +523,7 @@ export class SyncPipeline {
 
     return {
       post,
+      target: 'wechat',
       articleHtml: renderRes.html,
       fullPageHtml,
       warnings: renderRes.warnings.map((w) => w.detail),
@@ -495,25 +532,93 @@ export class SyncPipeline {
   }
 
   /**
-   * Pushes a single post to WeChat Draft Box.
+   * Pushes a single post to targeted platform(s): 'wechat' (default) | 'heybox' | 'all'.
    */
-  public async push(slug: string, options: { force?: boolean } = {}): Promise<PushResult> {
+  public async push(
+    slug: string,
+    options: {
+      to?: 'wechat' | 'heybox' | 'all';
+      force?: boolean;
+      dryRun?: boolean;
+    } = {}
+  ): Promise<PushResult> {
     return await this.stateStore.withLock(async () => {
       return await this.pushInternal(slug, options);
     });
   }
 
-  private async pushInternal(slug: string, options: { force?: boolean } = {}): Promise<PushResult> {
+  private async pushInternal(
+    slug: string,
+    options: {
+      to?: 'wechat' | 'heybox' | 'all';
+      force?: boolean;
+      dryRun?: boolean;
+    } = {}
+  ): Promise<PushResult> {
+    const targetPlatform = (options.to || this.config.sync.target || 'wechat').toLowerCase() as
+      | 'wechat'
+      | 'heybox'
+      | 'all';
+
     const post = await this.source.getPost(slug);
     if (!post) {
-      throw new Error(`[Pipeline] Post not found: ${slug}`);
+      throw new Error(`[Pipeline] 未找到文章: ${slug}`);
     }
 
+    let wechatRes: PushResult | undefined;
+    let heyboxRes: HeyBoxPublishResult | undefined;
+
+    // 1. WeChat Push
+    if (targetPlatform === 'wechat' || targetPlatform === 'all') {
+      wechatRes = await this.pushToWeChat(post, options);
+    }
+
+    // 2. HeyBox Push
+    if (targetPlatform === 'heybox' || targetPlatform === 'all') {
+      heyboxRes = await this.pushToHeyBox(post, options);
+    }
+
+    const primaryMediaId = wechatRes?.mediaId || heyboxRes?.draftId || '';
+    const primaryTitle = wechatRes?.normalizedTitle || post.title;
+
+    return {
+      id: slug,
+      title: post.title,
+      normalizedTitle: primaryTitle,
+      mediaId: primaryMediaId,
+      isUpdate: wechatRes?.isUpdate ?? false,
+      warnings: wechatRes?.warnings ?? [],
+      wechat: wechatRes,
+      heybox: heyboxRes,
+    };
+  }
+
+  private async pushToHeyBox(
+    post: SourcePost,
+    options: { dryRun?: boolean } = {}
+  ): Promise<HeyBoxPublishResult> {
+    const res = await this.heyboxPublisher.publishDraft(post, { dryRun: options.dryRun });
+    if (!options.dryRun && res.draftId) {
+      const state = this.stateStore.getPost(post.id);
+      if (state) {
+        state.heyboxDraftId = res.draftId;
+        state.heyboxSyncedAt = new Date().toISOString();
+        this.stateStore.setPost(post.id, state);
+        this.stateStore.save();
+      }
+    }
+    return res;
+  }
+
+  private async pushToWeChat(
+    post: SourcePost,
+    options: { force?: boolean } = {}
+  ): Promise<PushResult> {
+    const slug = post.id;
     const { title: finalTitle } = normalizeWeChatTitle(post.title);
     const finalDigest = normalizeWeChatDigest(post.summary);
     const assetRoots = this.config.source.assetRoots || ['{postDir}'];
 
-    // 1. Preprocess once to collect image references and warnings
     const imageMap = new Map<string, string>();
     const warnings: string[] = [];
 
@@ -547,27 +652,20 @@ export class SyncPipeline {
       }
     }
 
-    // 2. Resolve and upload Cover image (thumb_media_id is required by WeChat)
+    // Resolve cover
     let coverLocalPath: string | null = null;
-
     if (post.coverRaw) {
       coverLocalPath = resolveLocalAssetPath(post.coverRaw, post.postDir, assetRoots);
     }
-
-    // Fallback 1: First local body image
     if (!coverLocalPath && post.localAssetPaths.length > 0) {
       coverLocalPath = post.localAssetPaths[0];
     }
-
-    // Fallback 2: Default configured cover
     if (!coverLocalPath && this.config.sync.defaultCover) {
       const defPath = path.resolve(this.config.sync.defaultCover);
       if (fs.existsSync(defPath)) {
         coverLocalPath = defPath;
       }
     }
-
-    // Fallback 3: Auto-detect {repoRoot}/public/og/og.png from blog repository
     if (!coverLocalPath) {
       const repoRoot = findGitRoot(post.postDir);
       if (repoRoot) {
@@ -588,7 +686,6 @@ export class SyncPipeline {
       this.stateStore
     );
 
-    // 3. Render final HTML with WeChat image URLs
     const renderOutput = renderArticle(post.bodyMarkdown, {
       themeId: this.config.render.theme,
       accent: this.config.render.accent,
@@ -627,7 +724,6 @@ export class SyncPipeline {
       only_fans_can_comment: this.config.sync.onlyFansCanComment,
     };
 
-    // 4. Update or Add to WeChat Draft Box
     const existingState = this.stateStore.getPost(slug);
     let isUpdate = false;
     let finalMediaId = '';
@@ -641,7 +737,6 @@ export class SyncPipeline {
         if (err instanceof WeChatError && err.isNonFallbackError()) {
           throw err;
         }
-        // Draft was deleted or already published in WeChat backend -> fall back to add
         console.warn(`[Pipeline] 更新草稿失败 (${err.message})，降级为新建草稿...`);
         finalMediaId = await this.wechatClient.draft.add([articleInput]);
       }
@@ -649,13 +744,14 @@ export class SyncPipeline {
       finalMediaId = await this.wechatClient.draft.add([articleInput]);
     }
 
-    // 5. Persist state
     this.stateStore.setPost(slug, {
       contentHash: post.contentHash,
       title: post.title,
       draftMediaId: finalMediaId,
       status: 'synced',
       pushedAt: new Date().toISOString(),
+      heyboxDraftId: existingState?.heyboxDraftId,
+      heyboxSyncedAt: existingState?.heyboxSyncedAt,
     });
     this.stateStore.save();
 
@@ -671,13 +767,21 @@ export class SyncPipeline {
 
   /**
    * Synchronizes new articles (and optionally updated articles if includeUpdated is enabled) up to maxPerRun.
-   * By default, only brand-new articles (!state) are pushed automatically.
+   * By default, pushes to the target platform specified by `options.to` or `config.sync.target`.
    */
-  public async sync(options: { includeUpdated?: boolean; forcePull?: boolean } = {}): Promise<SyncReport> {
+  public async sync(
+    options: {
+      to?: 'wechat' | 'heybox' | 'all';
+      includeUpdated?: boolean;
+      forcePull?: boolean;
+      dryRun?: boolean;
+    } = {}
+  ): Promise<SyncReport> {
     return await this.stateStore.withLock(async () => {
       await this.prepare({ forcePull: options.forcePull });
       const posts = await this.source.scanPosts();
       const shouldSyncUpdated = options.includeUpdated ?? this.config.sync.syncUpdated;
+      const targetPlatform = options.to || this.config.sync.target || 'wechat';
 
       const pendingPosts: SourcePost[] = [];
       let skippedUpdatedCount = 0;
@@ -696,7 +800,6 @@ export class SyncPipeline {
         }
       }
 
-      // Select up to maxPerRun (newest pending posts), then push oldest-first so newest sits at top of draft box
       const toProcess = pendingPosts.slice(0, this.config.sync.maxPerRun).reverse();
       const skippedDueToLimit = Math.max(0, pendingPosts.length - toProcess.length);
 
@@ -705,7 +808,10 @@ export class SyncPipeline {
 
       for (const post of toProcess) {
         try {
-          const res = await this.pushInternal(post.id);
+          const res = await this.pushInternal(post.id, {
+            to: targetPlatform,
+            dryRun: options.dryRun,
+          });
           pushed.push(res);
         } catch (err: any) {
           failed.push({ id: post.id, error: err.message });
@@ -727,5 +833,5 @@ export class SyncPipeline {
 }
 
 function escapeHtmlAttr(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return str.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

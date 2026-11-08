@@ -26,6 +26,8 @@ export interface AppConfig {
     appendCopyrightCard: boolean;
   };
   sync: {
+    target?: 'wechat' | 'heybox' | 'all';
+    platforms?: ('wechat' | 'heybox')[];
     stateFile: string;
     maxPerRun: number;
     syncUpdated: boolean;
@@ -61,6 +63,33 @@ function resolveConfigRelativePath(targetPath: string, baseDir: string): string 
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(baseDir, trimmed);
 }
 
+function loadEnvFile(envPath: string): void {
+  if (!fs.existsSync(envPath)) return;
+  try {
+    const content = fs.readFileSync(envPath, 'utf8');
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        if (
+          (val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))
+        ) {
+          val = val.slice(1, -1);
+        }
+        if (process.env[key] === undefined) {
+          process.env[key] = val;
+        }
+      }
+    }
+  } catch {
+    // Ignore unreadable env files
+  }
+}
+
 export function loadConfig(configPath?: string): AppConfig {
   let resolvedPath = configPath
     ? path.resolve(configPath)
@@ -73,6 +102,11 @@ export function loadConfig(configPath?: string): AppConfig {
     }
   }
   const configDir = path.dirname(resolvedPath);
+
+  // Automatically load local .env if present without requiring external dependencies
+  loadEnvFile(path.join(configDir, '.env'));
+  loadEnvFile(path.resolve(process.cwd(), '.env'));
+  loadEnvFile('/etc/md2posts/md2posts.env');
 
   let rawYaml = '';
   let parsed: any = {};
@@ -141,6 +175,12 @@ export function loadConfig(configPath?: string): AppConfig {
       appendCopyrightCard: parsed.render?.appendCopyrightCard !== false,
     },
     sync: {
+      target: (parsed.sync?.target || 'wechat').toLowerCase(),
+      platforms: Array.isArray(parsed.sync?.platforms)
+        ? parsed.sync.platforms
+        : (parsed.sync?.target || 'wechat') === 'all'
+        ? ['wechat', 'heybox']
+        : [(parsed.sync?.target || 'wechat') as 'wechat' | 'heybox'],
       stateFile: resolveConfigRelativePath(rawStateFile, configDir),
       maxPerRun: parsed.sync?.maxPerRun || 5,
       syncUpdated: Boolean(parsed.sync?.syncUpdated),

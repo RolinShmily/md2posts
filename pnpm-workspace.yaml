@@ -1,10 +1,5 @@
 packages:
-  - 'wechat-sdk'
-  - 'heybox-sdk'
-  - 'renderer'
-  - 'sources'
-  - 'sync-core'
-  - 'cli'
+  - 'packages/*'
 
 strictDepBuilds: false
 

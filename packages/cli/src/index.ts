@@ -5,9 +5,8 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { WeChatClient } from '@md2posts/wechat-sdk';
-import { HeyBoxClient, HeyBoxPublisher } from '@md2posts/heybox-sdk';
+import { HeyBoxClient } from '@md2posts/heybox-sdk';
 import { listThemes } from '@md2posts/renderer';
-import { FsSource } from '@md2posts/sources';
 import {
   loadConfig,
   SyncPipeline,
@@ -191,17 +190,15 @@ async function runBaseline(
 async function runPreview(slug: string, configPath?: string, output?: string, themeId?: string, cliValues?: any) {
   printBanner();
   const config = loadConfigWithOverrides(configPath, cliValues);
-  const targetPlatform = (cliValues?.to || 'wechat').toLowerCase();
+  const targetPlatform = (cliValues?.to || 'wechat').toLowerCase() as 'wechat' | 'heybox';
+  if (themeId) config.render.theme = themeId;
 
-  if (targetPlatform === 'heybox') {
-    const publisher = new HeyBoxPublisher(config);
-    const source = new FsSource(config.source);
-    await source.prepare?.();
-    const post = await source.getPost(slug);
-    if (!post) {
-      throw new Error(`[Pipeline] 未找到文章: ${slug}`);
-    }
-    const { bundleDir, prepared } = await publisher.exportPackage(post, output);
+  const pipeline = new SyncPipeline(config);
+  console.log(`正在为文章 [${slug}] 生成离线预览 (目标: ${targetPlatform}) ...`);
+  const res = await pipeline.preview(slug, { to: targetPlatform, output, theme: themeId });
+
+  if (res.target === 'heybox' && res.heybox) {
+    const { bundleDir, prepared } = res.heybox;
     const codeImgCount = Array.from(prepared.assets.keys()).filter((k) =>
       k.startsWith('assets/code_')
     ).length;
@@ -224,14 +221,6 @@ async function runPreview(slug: string, configPath?: string, output?: string, th
     return;
   }
 
-  if (themeId) {
-    config.render.theme = themeId;
-  }
-
-  const pipeline = new SyncPipeline(config);
-  console.log(`正在渲染文章 [${slug}] (主题: ${config.render.theme}) ...`);
-
-  const res = await pipeline.preview(slug);
   const outputPath = output
     ? path.resolve(output)
     : path.resolve(process.cwd(), `preview-${slug}.html`);
@@ -370,29 +359,25 @@ async function runPush(
   for (const slug of targetSlugs) {
     try {
       console.log(`⏳ 正在处理 [${slug}] ...`);
+      const res = await pipeline.push(slug, {
+        to: targetPlatform as 'wechat' | 'heybox' | 'all',
+        force: options.force,
+        dryRun: options.dryRun,
+      });
 
-      // 1. WeChat Push
-      if (targetPlatform === 'wechat' || targetPlatform === 'all') {
-        const res = await pipeline.push(slug, { force: options.force });
+      if (res.wechat) {
         console.log(`✓ [${res.id}] 微信公众号推送成功！`);
-        console.log(`    微信标题:    ${res.normalizedTitle}`);
-        console.log(`    操作类型:    ${res.isUpdate ? '更新现有草稿' : '新建草稿'}`);
-        console.log(`    草稿MediaId: ${res.mediaId}`);
-        if (res.warnings.length > 0) {
-          console.log(`    ⚠️  排版提示 (${res.warnings.length} 条): ${res.warnings[0]}`);
+        console.log(`    微信标题:    ${res.wechat.normalizedTitle}`);
+        console.log(`    操作类型:    ${res.wechat.isUpdate ? '更新现有草稿' : '新建草稿'}`);
+        console.log(`    草稿MediaId: ${res.wechat.mediaId}`);
+        if (res.wechat.warnings.length > 0) {
+          console.log(`    ⚠️  排版提示 (${res.wechat.warnings.length} 条): ${res.wechat.warnings[0]}`);
         }
       }
 
-      // 2. HeyBox Push / Export
-      if (targetPlatform === 'heybox' || targetPlatform === 'all') {
-        const heyPublisher = new HeyBoxPublisher(config);
-        const source = new FsSource(config.source);
-        const post = await source.getPost(slug);
-        if (post) {
-          const heyRes = await heyPublisher.publishDraft(post, { dryRun: options.dryRun });
-          console.log(`✓ [${slug}] 小黑盒: ${heyRes.message}`);
-          console.log(`    发布包路径: ${heyRes.bundleDir}`);
-        }
+      if (res.heybox) {
+        console.log(`✓ [${slug}] 小黑盒: ${res.heybox.message}`);
+        console.log(`    发布包路径: ${res.heybox.bundleDir}`);
       }
 
       successCount++;
@@ -411,6 +396,11 @@ async function runPush(
 async function runSync(configPath?: string, dryRun = false, includeUpdated = false, cliValues?: any) {
   printBanner();
   const config = loadConfigWithOverrides(configPath, cliValues);
+  const targetPlatform = (cliValues?.to || config.sync.target || 'wechat').toLowerCase() as
+    | 'wechat'
+    | 'heybox'
+    | 'all';
+
   const client = new WeChatClient({
     appId: config.wechat.appId,
     appSecret: config.wechat.appSecret,
@@ -420,12 +410,14 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
   const pipeline = new SyncPipeline(config, client);
   const modeDesc = includeUpdated || config.sync.syncUpdated ? '新增 + 已修改文章' : '仅新发表文章';
   console.log(
-    `开始执行${dryRun ? '【模拟演练】' : ''}自动同步 (策略: ${modeDesc}, 单次上限: ${config.sync.maxPerRun} 篇)...`
+    `开始执行${dryRun ? '【模拟演练】' : ''}自动同步 (目标: ${targetPlatform}, 策略: ${modeDesc}, 单次上限: ${config.sync.maxPerRun} 篇)...`
   );
 
   const report = await pipeline.sync({
+    to: targetPlatform,
     includeUpdated: includeUpdated || undefined,
     forcePull: cliValues?.pull,
+    dryRun,
   });
 
   console.log('\n📊 同步完成报告:');
