@@ -203,9 +203,10 @@ echo "$HOME" && pnpm install $PKG
   assert.doesNotMatch(prepared.richHtml, /<table\b/i, 'Should not output raw <table> HTML');
   assert.match(prepared.richHtml, /!\[数据表格\]\(assets\/table_1\.png\)|data:image\/png;base64/);
 
-  // 3. Check external link normalized to **text**（url）
-  assert.match(prepared.richHtml, /<strong>官方文档<\/strong>（https:\/\/nodejs\.org）/);
-  assert.doesNotMatch(prepared.richHtml, /<a\b[^>]*href=["']https:\/\/nodejs\.org/i);
+  // 3. External links keep only the label: no anchor, no printed URL (平台禁止外站引流)
+  assert.match(prepared.richHtml, /官方文档/);
+  assert.doesNotMatch(prepared.richHtml, /nodejs\.org/);
+  assert.doesNotMatch(prepared.richHtml, /<a\b[^>]*href=["']https:\/\//i);
 
   // 4. Check inline code and strikethrough normalized to strong
   assert.match(prepared.richHtml, /<strong>const x = 100<\/strong>/);
@@ -411,4 +412,65 @@ test('cover comes only from frontmatter or defaultCover, and is prepended to the
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('all external links keep only their label; own domains and footer carry no URL', async () => {
+  const body = [
+    '参考[站内旧文](https://blog.example.com/posts/old/)以及[官方文档](https://example.org/docs)。',
+    '裸链 https://blog.example.com/posts/bare/ 也应被移除。',
+    '自有子域[文档站](https://doc.example.com/guide)同样处理。',
+    '',
+    '```bash',
+    'curl -fsSL https://blog.example.com/script.sh | sh',
+    '```',
+  ].join('\n');
+
+  const prepared = await prepareHeyBoxArticle(
+    {
+      id: 'link-policy',
+      title: 'Link Policy',
+      bodyMarkdown: body,
+      canonicalUrl: 'https://blog.example.com/posts/link-policy/',
+    },
+    { siteUrl: 'https://blog.example.com' }
+  );
+
+  // Labels survive, every URL is gone from the body.
+  assert.ok(prepared.markdown.includes('站内旧文'));
+  assert.ok(prepared.markdown.includes('官方文档'));
+  assert.ok(prepared.markdown.includes('文档站'));
+
+  const prose = prepared.markdown.replace(/<blockquote>[\s\S]*?<\/blockquote>/g, '');
+  assert.ok(!prose.includes('blog.example.com'), 'own apex and its subdomains must be removed');
+  assert.ok(!prose.includes('example.org'), 'third-party URLs must not be printed either');
+  assert.ok(!prepared.richHtml.includes('<a href'), 'no external anchors are emitted');
+
+  // Code blocks are content, not promotion: their URLs must survive.
+  assert.ok(prepared.richHtml.includes('blog.example.com/script.sh'));
+
+  // Footer no longer advertises the blog.
+  assert.ok(!prepared.markdown.includes('本文同步自个人技术博客'));
+  assert.ok(!prepared.richHtml.includes('blog.example.com/posts/link-policy'));
+});
+
+test('external link threshold produces a publishing warning', async () => {
+  const many = Array.from({ length: 6 }, (_, i) => `[文档${i}](https://example${i}.org/page)`).join('\n\n');
+
+  const quiet = await prepareHeyBoxArticle({
+    id: 'few-links',
+    title: 'Few',
+    bodyMarkdown: '[文档](https://example.org/page)',
+    canonicalUrl: 'https://blog.example.com/posts/x/',
+  });
+  assert.equal(quiet.warnings.length, 0);
+
+  const noisy = await prepareHeyBoxArticle({
+    id: 'many-links',
+    title: 'Many',
+    bodyMarkdown: many,
+    canonicalUrl: 'https://blog.example.com/posts/x/',
+  });
+  assert.equal(noisy.externalLinkCount, 6);
+  assert.equal(noisy.warnings.length, 1);
+  assert.match(noisy.warnings[0], /站外链接/);
 });

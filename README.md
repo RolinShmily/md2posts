@@ -22,7 +22,7 @@
 | Platform | Core Highlights | Pain Points Solved |
 |---|---|---|
 | **WeChat MP** (`wechat`) | 28 built-in themes, WeChat-safe section lists, line-by-line highlighted code blocks, external links to footnotes, adaptive WebP compression | Eliminates WeChat editor layout breakage, line-break losses, and >1MB image limit errors |
-| **XiaoHeiHe** (`heybox`) | **Hybrid code rendering** (short commands become copy-friendly native terminal blocks, long source files become dark PNG cards), tables rendered as cards, cover inserted at body top, ProseMirror H2/H3 alignment, direct draft publishing | Solves mobile code truncation, unreadable squeezed screenshots, and duplicated images |
+| **XiaoHeiHe** (`heybox`) | **Hybrid code rendering** (short commands become copy-friendly native terminal blocks, long source files become dark PNG cards), tables as cards, cover at body top, **external links reduced to plain text**, direct draft publishing | Solves mobile code truncation, unreadable screenshots, duplicated images, and "off-site traffic" policy violations |
 
 ---
 

@@ -249,6 +249,12 @@ async function runPreview(slug: string, configPath?: string, output?: string, th
     console.log(`  话题标签:   ${prepared.metadata.hashtags.map((h) => `#${h}#`).join(' ') || '无'}`);
     console.log(`  代码块转图: ${codeImgCount} 张 (防止手机端排版打散)`);
     console.log(`  16:9 封面:  ${prepared.coverBuffer ? '已裁切生成 (cover_16_9.jpg)' : '未找到封面'}`);
+    console.log(
+      `  站外链接:   ${prepared.externalLinkCount ?? 0} 个（已全部转为纯文字，正文不含任何 URL）`
+    );
+    for (const w of prepared.warnings) {
+      console.log(`  ⚠️  ${w}`);
+    }
     console.log(`\n💡 提示：双击打开 ${bundleDir}/preview.html 可预览小黑盒效果！`);
     console.log(`   👉 点击页面顶部【一键复制小黑盒富文本】，并在小黑盒「发布文章」编辑区直接 Ctrl+V 粘贴即可！\n`);
     return;

@@ -123,6 +123,7 @@ export class SyncPipeline {
         browserChannel: config.heybox?.browserChannel,
         headless: config.heybox?.headless,
         codeBlockMode: config.heybox?.codeBlockMode,
+        siteUrl: config.site.url,
       });
   }
 

@@ -29,6 +29,10 @@ export interface HeyBoxPreparedResult {
   assets: Map<string, Buffer>; // relative filename in output -> Buffer
   metadata: HeyBoxMetadata;
   previewHtml: string;
+  /** Non-fatal publishing hints (e.g. too many external links). */
+  warnings: string[];
+  /** External (non platform-internal, non own-domain) URLs still present in the body. */
+  externalLinkCount?: number;
 }
 
 export interface HeyBoxPublishResult {
@@ -46,10 +50,13 @@ export interface HeyBoxPublishResult {
 
 export type HeyBoxCodeBlockMode = 'auto' | 'terminal' | 'image';
 
+
 export interface HeyBoxPrepareOptions {
   assetRoots?: string[];
   defaultCoverPath?: string;
   codeBlockMode?: HeyBoxCodeBlockMode;
+  /** Blog site URL; its host (and subdomains) is treated as "own domain" and never linked. */
+  siteUrl?: string;
 }
 
 export interface HeyBoxPublishOptions {
@@ -69,6 +76,7 @@ export interface HeyBoxClientOptions {
   assetRoots?: string[];
   defaultCoverPath?: string;
   codeBlockMode?: HeyBoxCodeBlockMode;
+  siteUrl?: string;
   dryRun?: boolean;
   /** Optional nested config support for AppConfig */
   source?: { assetRoots?: string[] };

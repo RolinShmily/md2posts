@@ -93,6 +93,7 @@ export class HeyBoxClient {
       assetRoots,
       defaultCoverPath,
       codeBlockMode: options.codeBlockMode || (options as any).heybox?.codeBlockMode,
+      siteUrl: options.siteUrl,
       dryRun: Boolean(options.dryRun),
     };
 
@@ -138,6 +139,7 @@ export class HeyBoxClient {
       assetRoots: this.options.assetRoots,
       defaultCoverPath: this.options.defaultCoverPath,
       codeBlockMode: this.options.codeBlockMode,
+      siteUrl: this.options.siteUrl,
     });
 
     // 1. Write transformed Markdown
@@ -157,6 +159,7 @@ export class HeyBoxClient {
           title: prepared.title,
           slug: article.id,
           canonicalUrl: article.canonicalUrl,
+          externalLinkCount: prepared.externalLinkCount ?? 0,
           ...prepared.metadata,
         },
         null,
@@ -201,6 +204,9 @@ export class HeyBoxClient {
     options: HeyBoxPublishOptions = {}
   ): Promise<HeyBoxPublishResult> {
     const { bundleDir, prepared } = await this.exportPackage(article, options.outDir);
+    for (const w of prepared.warnings) {
+      console.warn(`[HeyBox] ⚠ ${w}`);
+    }
     const codeImagesCount = Array.from(prepared.assets.keys()).filter((k) =>
       k.startsWith('assets/code_')
     ).length;

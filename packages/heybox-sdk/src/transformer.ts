@@ -650,6 +650,53 @@ export function generateHeyBoxPreviewHtml(params: {
 </html>`;
 }
 
+/** Hostname of a URL, or '' when unparsable. */
+export function urlHost(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Common second-level public suffixes, so `blog.example.co.uk` yields `example.co.uk`
+ * rather than the over-broad `co.uk`.
+ */
+const SECOND_LEVEL_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk',
+  'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
+  'com.au', 'net.au', 'org.au',
+  'co.jp', 'co.kr', 'co.nz', 'co.in', 'co.za',
+  'com.br', 'com.tw', 'com.hk', 'com.sg',
+]);
+
+/** Registrable apex of a host: `blog.example.com` -> `example.com`, `a.example.co.uk` -> `example.co.uk`. */
+export function apexHost(host: string): string {
+  const labels = host.toLowerCase().replace(/^www\./, '').split('.').filter(Boolean);
+  if (labels.length <= 2) return labels.join('.');
+  const lastTwo = labels.slice(-2).join('.');
+  return SECOND_LEVEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
+}
+
+/**
+ * XiaoHeiHe forbids driving traffic to other communities/platforms (community rules
+ * penalise "外站引流"), so anything under the author's own registrable domain — including
+ * subdomains such as doc./cfg./blog. — must never appear in the body.
+ */
+export function isOwnDomainUrl(rawUrl: string, ownApexes: string[]): boolean {
+  const host = urlHost(rawUrl);
+  if (!host) return false;
+  const apex = apexHost(host);
+  return ownApexes.some((own) => own && apex === own);
+}
+
+/** XiaoHeiHe's own links are safe to keep as-is. */
+export function isPlatformUrl(rawUrl: string): boolean {
+  const host = urlHost(rawUrl);
+  return host === 'xiaoheihe.cn' || host.endsWith('.xiaoheihe.cn');
+}
+
 /**
  * Prepares a blog post into a standardized XiaoHeiHe (HeyBox) publishing bundle.
  * 1. Code blocks are automatically converted into PNG image cards and inlined as Base64.
@@ -842,17 +889,44 @@ export async function prepareHeyBoxArticle(
       transformedMd.slice(0, rep.start) + rep.replacement + transformedMd.slice(rep.end);
   }
 
-  // 2.4 External links normalization:
-  // Convert [text](url) -> **text**（url） if url is NOT a XiaoHeiHe internal link
+  // 2.4 Link normalization (XiaoHeiHe community rules forbid "外站引流"):
+  //  - platform-internal links: untouched
+  //  - own-domain links (site.url / canonicalUrl host): keep the label only, drop the URL
+  //  - third-party links: per policy, default to a clickable <a> instead of printing the URL
+  // Own domains are matched by registrable apex so doc./cfg./blog. subdomains are covered.
+  const ownHosts = Array.from(
+    new Set(
+      [urlHost(article.canonicalUrl), urlHost(options.siteUrl || '')]
+        .filter(Boolean)
+        .map(apexHost)
+    )
+  );
+
+  // Simplest, safest rule for this platform: keep the visible text, drop the URL entirely.
+  // Only XiaoHeiHe's own links survive as links (they carry no "外站引流" risk).
+  // Counted here (not by scanning prose) so inline-code technical URLs such as
+  // `http://127.0.0.1:80` are not mistaken for promotional links.
+  let externalLinkCount = 0;
   transformedMd = transformedMd.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     (match, text, url) => {
-      if (/https?:\/\/(?:www\.)?xiaoheihe\.cn/i.test(url)) {
-        return match;
-      }
-      return `**${text.trim()}**（${url.trim()}）`;
+      const label = String(text).trim();
+      const href = String(url).trim();
+      if (isPlatformUrl(href)) return match;
+      externalLinkCount++;
+      return label || href;
     }
   );
+
+  // Bare own-domain URLs typed directly in prose must go too (they are the classic
+  // "看我博客" pattern). Platform/third-party bare URLs are left untouched as content.
+  for (const own of ownHosts) {
+    const escapedHost = own.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    transformedMd = transformedMd.replace(
+      new RegExp(`https?://(?:[\\w-]+\\.)*${escapedHost}(?:/[^\\s)\\]"']*)?`, 'gi'),
+      ''
+    );
+  }
 
   // 2.5 Inline code normalization: `code` -> **code**
   transformedMd = transformedMd.replace(/`([^`\n]+)`/g, '**$1**');
@@ -905,7 +979,9 @@ export async function prepareHeyBoxArticle(
 
   // Append XiaoHeiHe engagement footer card
   const hashtagText = metadata.hashtags.map((h) => `#${h}#`).join(' ');
-  const engagementCard = `\n\n---\n> 🎮 **小黑盒专栏** · 本文同步自个人技术博客 [${article.canonicalUrl}](${article.canonicalUrl})。\n> 盒友们如果觉得这篇教程有用，欢迎点赞、收藏与免费充电！遇到任何配置问题欢迎在评论区交流讨论～\n\n${hashtagText ? `${hashtagText}\n` : ''}`;
+  // No canonical URL here: linking to the author's own site in every post is exactly the
+  // "外站引流" pattern the community rules penalise.
+  const engagementCard = `\n\n---\n> 🎮 **小黑盒专栏** · 感谢阅读！\n> 如果这篇内容对你有帮助，欢迎点赞、收藏，或到评论区一起交流讨论～\n\n${hashtagText ? `${hashtagText}\n` : ''}`;
   transformedMd += engagementCard;
 
   // 3. Render Rich HTML (with inlined Base64 images and H2/H3 mapping)
@@ -932,6 +1008,15 @@ export async function prepareHeyBoxArticle(
     coverBuffer,
   });
 
+  const warnings: string[] = [];
+  const EXTERNAL_LINK_WARN_THRESHOLD = 5;
+  if (externalLinkCount >= EXTERNAL_LINK_WARN_THRESHOLD) {
+    warnings.push(
+      `正文包含 ${externalLinkCount} 个站外链接（阈值 ${EXTERNAL_LINK_WARN_THRESHOLD}）：` +
+        '已全部转为纯文字（平台禁止外站引流）。引用多时建议复核是否会被判定为营销内容。'
+    );
+  }
+
   return {
     article,
     title,
@@ -941,5 +1026,7 @@ export async function prepareHeyBoxArticle(
     assets,
     metadata,
     previewHtml,
+    warnings,
+    externalLinkCount,
   };
 }

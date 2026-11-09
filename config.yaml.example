@@ -91,18 +91,13 @@ wechat:
   appSecret: ""
 
 heybox:
-  # 小黑盒创作者会话凭据文件路径（可选，留空则自动读取系统的 ~/.config/xiaoheihe-cli/session.json 或 %LOCALAPPDATA%\xiaoheihe-cli\session.json）
+  # 登录态文件。留空则用 .cache/heybox-session.json（`pnpm cli login --to heybox` 写入此处）
   sessionFile: ""
-  # 底层推流工具命令名或绝对路径（可选，默认自动探测 PATH 中的 xiaoheihe 或 xiaoheihe-cli）
-  cliPath: "xiaoheihe"
-  # 浏览器执行通道 (chrome 或 msedge，用于无头推流或本地扫码)
-  browserChannel: "chrome"
-  # 代码块渲染策略 (auto | terminal | image)
-  #   auto     - 默认：短命令/配置片段(<=6行或 bash/pwsh/config 等)转原生终端块(可长按复制)，
-  #              长程序源码(>6行) 转 2x Retina 深色代码卡片图
-  #   terminal - 全部转原生终端块（零图片、100% 可复制，适合纯命令教程类文章）
-  #   image    - 全部转高清代码卡片图（适合需要语法高亮的复杂长源码）
+  # 无头推流浏览器通道 chrome | msedge（留空自动探测）
+  browserChannel: ""
+  # 代码块渲染: auto(短命令转可复制终端块 / 长源码转卡片图) | terminal | image
   codeBlockMode: "auto"
+  # 站外链接会自动降级为纯文字（小黑盒禁止“外站引流”），无需配置
 
 notify:
   # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON）
