@@ -39,8 +39,8 @@ fi
 
 # 2. 检查编译产物
 if [[ ! -f "${REPO_DIR}/packages/cli/dist/index.js" ]]; then
-  echo "==> 检测到项目尚未编译，正在执行 pnpm build ..."
-  (cd "${REPO_DIR}" && pnpm build)
+  echo "==> 检测到项目尚未编译，正在执行 build ..."
+  (cd "${REPO_DIR}" && npm run build)
 fi
 
 # 3. 准备系统级可选凭据目录

@@ -36,6 +36,7 @@ export interface FsSourceOptions {
   layout?: 'bundle' | 'flat';     // default: 'bundle' (slug/index.md)
   assetRoots?: string[];          // default: ['{postDir}', '{repoRoot}/public']
   gitPull?: boolean;              // default: true (默认从远程拉取最新更新)
+  sortOrder?: 'asc' | 'desc';     // default: 'asc' (正序：第 1 篇/最早文章排在序号 1；'desc' 为最新文章排前面)
   siteUrl?: string;               // default: 'https://blog.srprolin.com'
   postPathPattern?: string;       // default: '/posts/{slug}/'
   fieldMapping?: FieldMapping;

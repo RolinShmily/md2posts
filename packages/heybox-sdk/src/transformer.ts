@@ -1,32 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import MarkdownIt from 'markdown-it';
+import { findGitRoot, resolveLocalAsset } from '@md2posts/sources';
 import type {
   HeyBoxArticleInput,
   HeyBoxMetadata,
   HeyBoxPreparedResult,
   HeyBoxPrepareOptions,
 } from './types.js';
-import { renderCodeBlockToImage, crop16x9Cover } from './card-renderer.js';
-
-function escapeXml(unsafe: string): string {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
-    switch (c) {
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '&':
-        return '&amp;';
-      case "'":
-        return '&apos;';
-      case '"':
-        return '&quot;';
-      default:
-        return c;
-    }
-  });
-}
+import {
+  renderCodeBlockToImage,
+  crop16x9Cover,
+  renderTableToImage,
+  formatTableAsFallbackText,
+  parseMarkdownTable,
+  escapeXml,
+  isCommandLineSnippet,
+  formatCodeAsNativeTerminalBox,
+} from './card-renderer.js';
 
 function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -118,58 +109,80 @@ export function inferHeyBoxMetadata(
 }
 
 /**
- * Resolves a local asset file path against postDir and configured assetRoots.
+ * Normalizes and sanitizes HTML into a conservative, rock-solid subset strictly compatible
+ * with XiaoHeiHe's ProseMirror editor schema.
+ * - Drops unsupported tags (<style>, <script>, <iframe>, <form>, <div>, etc.)
+ * - Unwraps forbidden containers and cleans paragraph nesting
+ * - Strips empty paragraphs (<p></p>)
  */
-export function resolveLocalAsset(
-  rawRef: string,
-  postDir?: string,
-  assetRoots: string[] = ['{postDir}']
-): string | null {
-  if (!rawRef || /^https?:\/\//i.test(rawRef) || rawRef.startsWith('data:')) {
-    return null;
-  }
+export function sanitizeHeyBoxHtml(rawHtml: string): string {
+  let html = rawHtml;
 
-  let decoded = rawRef.trim();
-  try {
-    decoded = decodeURIComponent(decoded);
-  } catch {
-    // Keep raw if malformed percent-encoding
-  }
+  // 1. Remove dangerous or non-display tags
+  html = html.replace(/<script\b[\s\S]*?<\/script>/gi, '');
+  html = html.replace(/<style\b[\s\S]*?<\/style>/gi, '');
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
 
-  if (path.isAbsolute(decoded) && fs.existsSync(decoded) && fs.statSync(decoded).isFile()) {
-    return decoded;
-  }
+  // 2. Convert common block wrappers to paragraph boundaries
+  html = html.replace(/<\/?(?:div|section|article|header|footer|nav|aside|main)\b[^>]*>/gi, (m) => {
+    return m.startsWith('</') ? '</p>' : '<p>';
+  });
 
-  const cleanRel = decoded.replace(/^\.\/+/, '').replace(/^\/+/, '');
-  const roots = assetRoots.length > 0 ? assetRoots : ['{postDir}'];
-
-  for (const rootPattern of roots) {
-    const rootDir = rootPattern.replace(/\{postDir\}/g, postDir || '.');
-    const candidate = path.resolve(rootDir, cleanRel);
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      return candidate;
+  // 2.1 Convert any remaining raw <table> to clean blockquotes (safety net for ProseMirror)
+  html = html.replace(/<table\b[\s\S]*?<\/table>/gi, (tableHtml) => {
+    const rows = tableHtml.match(/<tr\b[\s\S]*?<\/tr>/gi) || [];
+    const formattedRows = rows.map((r) => {
+      const cells = r.match(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi) || [];
+      const cleanCells = cells.map((c) => c.replace(/<[^>]+>/g, '').trim());
+      return cleanCells.join(' | ');
+    });
+    if (formattedRows.length > 0) {
+      return `<blockquote><p><strong>[数据表格]</strong></p><p>${formattedRows.join('<br />')}</p></blockquote>`;
     }
-  }
+    return '';
+  });
 
-  return null;
+  // 3. Strip non-semantic inline tags that ProseMirror has no marks for
+  html = html.replace(/<\/?(?:span|font|mark)\b[^>]*>/gi, '');
+
+  // 4. Flatten strikethrough to strong
+  html = html.replace(/<del\b[^>]*>([\s\S]*?)<\/del>/gi, '<strong>$1</strong>');
+  html = html.replace(/<s\b[^>]*>([\s\S]*?)<\/s>/gi, '<strong>$1</strong>');
+
+  // 5. Flatten inline code to strong, EXCEPT inside our own native terminal boxes where
+  //    <code> conveys monospace alignment critical for commands and indented config.
+  html = html.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (match, inner) => {
+    return inner.includes('&nbsp;') || /<br\s*\/?>/i.test(inner) ? match : `<strong>${inner}</strong>`;
+  });
+
+  // 6. Clean up broken paragraph nestings (HTML5 invalid <p><p>)
+  html = html.replace(/<p>\s*<p>/gi, '<p>');
+  html = html.replace(/<\/p>\s*<\/p>/gi, '</p>');
+  html = html.replace(/<p>\s*(?:<br\s*\/?>)?\s*<\/p>/gi, '');
+
+  // 7. Normalize consecutive line breaks
+  html = html.replace(/\n{3,}/g, '\n\n');
+
+  return html.trim();
 }
 
 /**
  * Generates rich-text HTML compatible with XiaoHeiHe's ProseMirror editor.
- * - Headings normalized to H2 and H3
- * - Code blocks inlined as high-res dark card images (Base64)
+ * - Headings normalized strictly to H2 and H3
+ * - Code blocks and tables inlined as high-res dark card images (Base64)
  * - Local referenced images inlined as Base64
- * - Semantic blockquotes, lists, bold, italics
+ * - Safe image token rendering without invalid nested <p>
+ * - Strict HTML sanitization ensuring 100% stable, error-free pasting
  */
 export function renderHeyBoxRichHtml(
   markdown: string,
   imageBase64Map: Map<string, string>,
-  codeBlockBase64List: string[]
+  codeBlockBase64List: string[] = []
 ): string {
   const md = new MarkdownIt({
     html: true,
     breaks: true,
-    linkify: true,
+    linkify: false,
   });
 
   // XiaoHeiHe ProseMirror only supports level 2 & 3 in body
@@ -186,28 +199,41 @@ export function renderHeyBoxRichHtml(
   };
 
   // Replace images with Base64 when available
-  const defaultImageRenderer =
-    md.renderer.rules.image ||
-    ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
-
-  md.renderer.rules.image = (tokens, idx, options, env, self) => {
+  md.renderer.rules.image = (tokens, idx) => {
     const token = tokens[idx];
     const rawSrc = token.attrGet('src') || '';
     const alt = token.content || '';
 
+    let decodedSrc = rawSrc;
+    try {
+      decodedSrc = decodeURIComponent(rawSrc);
+    } catch {}
+
     let base64Src: string | undefined;
     for (const [key, val] of imageBase64Map.entries()) {
-      if (rawSrc === key || rawSrc.endsWith(key) || path.basename(rawSrc) === path.basename(key)) {
+      let decodedKey = key;
+      try {
+        decodedKey = decodeURIComponent(key);
+      } catch {}
+
+      if (
+        rawSrc === key ||
+        decodedSrc === decodedKey ||
+        rawSrc === decodedKey ||
+        decodedSrc === key ||
+        rawSrc.endsWith(key) ||
+        decodedSrc.endsWith(decodedKey) ||
+        path.basename(rawSrc) === path.basename(key) ||
+        path.basename(decodedSrc) === path.basename(decodedKey)
+      ) {
         base64Src = val;
         break;
       }
     }
 
-    if (base64Src) {
-      return `<p><img src="${base64Src}" alt="${escapeXml(alt)}" /></p>`;
-    }
-
-    return defaultImageRenderer(tokens, idx, options, env, self);
+    const src = base64Src || rawSrc;
+    // Return clean <img> without surrounding <p> to avoid nested <p><p><img></p></p>
+    return `<img src="${src}" alt="${escapeXml(alt)}" />`;
   };
 
   let fenceIndex = 0;
@@ -220,11 +246,13 @@ export function renderHeyBoxRichHtml(
       return `<p><img src="${base64Data}" alt="代码块 - ${escapeXml(lang)}" /></p>\n`;
     }
 
-    // Fallback if no card image generated
-    return `<p><code>${escapeXml(token.content)}</code></p>\n`;
+    // Fallback if no card image generated: use semantic blockquote with formatted code
+    const safeContent = escapeXml(token.content.trim());
+    return `<blockquote><p><strong>[代码块 - ${escapeXml(lang)}]</strong></p><p>${safeContent.replace(/\n/g, '<br />')}</p></blockquote>\n`;
   };
 
-  return md.render(markdown);
+  const rawRendered = md.render(markdown);
+  return sanitizeHeyBoxHtml(rawRendered);
 }
 
 /**
@@ -397,9 +425,9 @@ export function generateHeyBoxPreviewHtml(params: {
     .cover-img {
       width: 100%;
       aspect-ratio: 16/9;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
-      background: #25252f;
+      background: #141416;
     }
     .article-body {
       padding: 28px 24px 48px;
@@ -640,6 +668,9 @@ export async function prepareHeyBoxArticle(
   const imageBase64Map = new Map<string, string>();
 
   // 1. Process 16:9 Cover
+  // Resolution order: frontmatter image/cover -> configured defaultCover.
+  // We intentionally do NOT guess a cover from the first sibling screenshot: that produced
+  // unpredictable, ugly covers taken from arbitrary in-article images.
   let coverBuffer: Buffer | undefined;
   let coverSourcePath: string | null = null;
   const assetRoots = options.assetRoots || ['{postDir}'];
@@ -647,45 +678,91 @@ export async function prepareHeyBoxArticle(
   if (article.coverRaw) {
     coverSourcePath = resolveLocalAsset(article.coverRaw, article.postDir, assetRoots);
   }
-  if (!coverSourcePath && article.localAssetPaths && article.localAssetPaths.length > 0) {
-    coverSourcePath = article.localAssetPaths[0];
-  }
-  if (!coverSourcePath && options.defaultCoverPath && fs.existsSync(options.defaultCoverPath)) {
-    coverSourcePath = options.defaultCoverPath;
+  if (!coverSourcePath && options.defaultCoverPath) {
+    const repoRoot = findGitRoot(article.postDir || process.cwd());
+    const expanded = options.defaultCoverPath.replace(/\{repoRoot\}/g, repoRoot || '');
+    if (expanded && fs.existsSync(expanded)) {
+      coverSourcePath = expanded;
+    }
   }
 
   if (coverSourcePath && fs.existsSync(coverSourcePath)) {
     try {
       coverBuffer = await crop16x9Cover(coverSourcePath);
       assets.set('cover_16_9.jpg', coverBuffer);
+      const coverB64 = `data:image/jpeg;base64,${coverBuffer.toString('base64')}`;
+      imageBase64Map.set('cover_16_9.jpg', coverB64);
+      imageBase64Map.set('./cover_16_9.jpg', coverB64);
+      imageBase64Map.set('assets/cover_16_9.jpg', coverB64);
+      imageBase64Map.set('./assets/cover_16_9.jpg', coverB64);
     } catch (err: any) {
       console.warn(`[HeyBox] 16:9 封面裁剪失败: ${err.message}`);
     }
   }
 
-  // 2. Transform Markdown body (Code blocks -> Images)
+  // 2. Transform Markdown body
   let transformedMd = article.bodyMarkdown;
+
+  // XiaoHeiHe articles have no dedicated cover field, so the 16:9 cover must live at the top
+  // of the body for readers (and the platform cover picker) to see it.
+  if (coverBuffer) {
+    transformedMd = `![封面](assets/cover_16_9.jpg)\n\n${transformedMd}`;
+  }
 
   // Normalize multi-line iframes to video notes
   transformedMd = transformedMd.replace(/<iframe\b[\s\S]*?<\/iframe>/gi, () => {
     return `\n> 📺 **视频演示提示**：此处包含嵌入视频，请在小黑盒工具栏点击「视频」并粘贴 B 站视频嵌入代码，或前往原文链接查看高清演示。\n`;
   });
 
-  // Convert fenced code blocks to PNG images
+  // 2.2 Process fenced code blocks
+  // Strategy:
+  // - 'auto': Short commands & config snippets (<= 6 lines or terminal/shell/config) render as
+  //   clean native terminal code boxes (100% selectable, copyable, zero-scaling issues).
+  //   Long complex programs (> 6 lines) render as Retina dark-mode card images.
+  // - 'terminal': All code blocks render as native copyable terminal boxes (zero images).
+  // - 'image': All code blocks render as Retina image cards.
   const codeFenceRegex = /^(\s*)(```+|~~~+)([^\n]*)\n([\s\S]*?)\n\s*\2/gm;
-  let codeIndex = 0;
-  const codeReplacements: Array<{ match: string; replacement: string }> = [];
-  const codeBlockBase64List: string[] = [];
+  const codeMatches: Array<{
+    start: number;
+    end: number;
+    raw: string;
+    lang: string;
+    content: string;
+  }> = [];
 
   for (const m of transformedMd.matchAll(codeFenceRegex)) {
-    codeIndex++;
-    const fullMatch = m[0];
-    const lang = (m[3] || 'code').trim().split(/\s+/)[0] || 'code';
-    const codeContent = m[4];
+    codeMatches.push({
+      start: m.index!,
+      end: m.index! + m[0].length,
+      raw: m[0],
+      lang: (m[3] || 'code').trim().split(/\s+/)[0] || 'code',
+      content: m[4],
+    });
+  }
 
-    const imgFileName = `assets/code_${codeIndex}_${lang.replace(/[^a-zA-Z0-9_-]/g, '')}.png`;
+  const codeMode = options.codeBlockMode || 'auto';
+  let codeIndex = 0;
+  const codeBlockBase64List: string[] = [];
+  const codeReplacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (const cm of codeMatches) {
+    const isCmd = isCommandLineSnippet(cm.content, cm.lang);
+    const useNativeTerminal = codeMode === 'terminal' || (codeMode === 'auto' && isCmd);
+
+    if (useNativeTerminal) {
+      codeReplacements.push({
+        start: cm.start,
+        end: cm.end,
+        replacement: formatCodeAsNativeTerminalBox(cm.content, cm.lang),
+      });
+      continue;
+    }
+
+    codeIndex++;
+    const safeLang = cm.lang.replace(/[^a-zA-Z0-9_-]/g, '') || 'code';
+    const imgFileName = `assets/code_${codeIndex}_${safeLang}.png`;
     try {
-      const codeImgBuf = await renderCodeBlockToImage(codeContent, lang);
+      const codeImgBuf = await renderCodeBlockToImage(cm.content, cm.lang);
       assets.set(imgFileName, codeImgBuf);
       const base64Data = `data:image/png;base64,${codeImgBuf.toString('base64')}`;
       codeBlockBase64List.push(base64Data);
@@ -693,17 +770,113 @@ export async function prepareHeyBoxArticle(
       imageBase64Map.set(`./${imgFileName}`, base64Data);
 
       codeReplacements.push({
-        match: fullMatch,
-        replacement: `\n![代码块 - ${lang}](${imgFileName})\n`,
+        start: cm.start,
+        end: cm.end,
+        replacement: `\n![代码块 - ${cm.lang}](${imgFileName})\n`,
       });
     } catch (err: any) {
-      console.warn(`[HeyBox] 代码块转图失败: ${err.message}`);
+      console.warn(`[HeyBox] 代码块转图失败，使用原生终端块降级: ${err.message}`);
+      codeReplacements.push({
+        start: cm.start,
+        end: cm.end,
+        replacement: formatCodeAsNativeTerminalBox(cm.content, cm.lang),
+      });
     }
   }
 
-  for (const rep of codeReplacements) {
-    transformedMd = transformedMd.replace(rep.match, rep.replacement);
+  // Mask code blocks in reverse index order so subsequent inline transformations (math $...$, inline code `...`) never corrupt code
+  for (let i = codeMatches.length - 1; i >= 0; i--) {
+    const cm = codeMatches[i];
+    transformedMd =
+      transformedMd.slice(0, cm.start) + `\u0000HEYBOX_CODE_${i}\u0000` + transformedMd.slice(cm.end);
   }
+
+  // 2.3 Convert Markdown tables to PNG images or fallback blockquotes
+  // XiaoHeiHe ProseMirror does NOT support HTML <table> nodes; tables must be converted to images or text
+  const tableRegex = /^(\s*\|[^\n]+\|\r?\n\s*\|[\s:\-|]+\|\r?\n(?:\s*\|[^\n]+\|\r?\n?)*)/gm;
+  const tableMatches: Array<{ start: number; end: number; raw: string }> = [];
+
+  for (const tm of transformedMd.matchAll(tableRegex)) {
+    tableMatches.push({
+      start: tm.index!,
+      end: tm.index! + tm[0].length,
+      raw: tm[0],
+    });
+  }
+
+  let tableIndex = 0;
+  const tableReplacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (const tm of tableMatches) {
+    tableIndex++;
+    const parsed = parseMarkdownTable(tm.raw);
+    if (!parsed) continue;
+
+    const tableImgFileName = `assets/table_${tableIndex}.png`;
+    try {
+      const tableImgBuf = await renderTableToImage(parsed);
+      assets.set(tableImgFileName, tableImgBuf);
+      const base64Data = `data:image/png;base64,${tableImgBuf.toString('base64')}`;
+      imageBase64Map.set(tableImgFileName, base64Data);
+      imageBase64Map.set(`./${tableImgFileName}`, base64Data);
+
+      tableReplacements.push({
+        start: tm.start,
+        end: tm.end,
+        replacement: `\n![数据表格](${tableImgFileName})\n`,
+      });
+    } catch (err: any) {
+      console.warn(`[HeyBox] 表格转图失败，使用文本降级: ${err.message}`);
+      tableReplacements.push({
+        start: tm.start,
+        end: tm.end,
+        replacement: formatTableAsFallbackText(parsed),
+      });
+    }
+  }
+
+  // Replace tables in reverse index order
+  for (let i = tableReplacements.length - 1; i >= 0; i--) {
+    const rep = tableReplacements[i];
+    transformedMd =
+      transformedMd.slice(0, rep.start) + rep.replacement + transformedMd.slice(rep.end);
+  }
+
+  // 2.4 External links normalization:
+  // Convert [text](url) -> **text**（url） if url is NOT a XiaoHeiHe internal link
+  transformedMd = transformedMd.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (match, text, url) => {
+      if (/https?:\/\/(?:www\.)?xiaoheihe\.cn/i.test(url)) {
+        return match;
+      }
+      return `**${text.trim()}**（${url.trim()}）`;
+    }
+  );
+
+  // 2.5 Inline code normalization: `code` -> **code**
+  transformedMd = transformedMd.replace(/`([^`\n]+)`/g, '**$1**');
+
+  // 2.6 Strikethrough normalization: ~~text~~ -> **text**
+  transformedMd = transformedMd.replace(/~~([^~]+)~~/g, '**$1**');
+
+  // 2.7 Task list normalization: [ ] -> ☐, [x] -> ☑
+  transformedMd = transformedMd.replace(/^(\s*[-*+]\s+)\[ \]\s+/gm, '$1☐ ');
+  transformedMd = transformedMd.replace(/^(\s*[-*+]\s+)\[[xX]\]\s+/gm, '$1☑ ');
+
+  // 2.8 Math formula normalization:
+  // Block formula $$...$$ -> blockquote
+  transformedMd = transformedMd.replace(
+    /\$\$([\s\S]*?)\$\$/g,
+    (_m, formula) => `\n> 📐 **公式**：${formula.trim()}\n`
+  );
+  // Inline formula $...$ -> *formula*
+  transformedMd = transformedMd.replace(/\$([^\$\n]+)\$/g, '*$1*');
+
+  // 2.9 Restore masked code blocks with their final replacements (native terminal box or image tag)
+  transformedMd = transformedMd.replace(/\u0000HEYBOX_CODE_(\d+)\u0000/g, (_m, idxStr) => {
+    return codeReplacements[Number(idxStr)]?.replacement || '';
+  });
 
   // Copy local images referenced in markdown into assets/ and record Base64 data URLs
   if (article.localAssetPaths) {
@@ -714,11 +887,18 @@ export async function prepareHeyBoxArticle(
         assets.set(`assets/${filename}`, buf);
         const mime = getMimeType(localAsset);
         const b64 = `data:${mime};base64,${buf.toString('base64')}`;
+        const encName = encodeURIComponent(filename);
+
         imageBase64Map.set(localAsset, b64);
         imageBase64Map.set(filename, b64);
         imageBase64Map.set(`./${filename}`, b64);
         imageBase64Map.set(`assets/${filename}`, b64);
         imageBase64Map.set(`./assets/${filename}`, b64);
+
+        imageBase64Map.set(encName, b64);
+        imageBase64Map.set(`./${encName}`, b64);
+        imageBase64Map.set(`assets/${encName}`, b64);
+        imageBase64Map.set(`./assets/${encName}`, b64);
       } catch {}
     }
   }
@@ -732,17 +912,28 @@ export async function prepareHeyBoxArticle(
   const richHtml = renderHeyBoxRichHtml(transformedMd, imageBase64Map, codeBlockBase64List);
 
   // 4. Generate Simulated HeyBox Preview HTML
+  // The local preview already renders the cover as a 16:9 banner, so drop the duplicated
+  // leading cover image from the simulated body to avoid showing it twice.
+  const COVER_PREFIX = '![封面](assets/cover_16_9.jpg)\n\n';
+  const previewMarkdown =
+    coverBuffer && transformedMd.startsWith(COVER_PREFIX)
+      ? transformedMd.slice(COVER_PREFIX.length)
+      : transformedMd;
+  const previewRichHtml =
+    previewMarkdown === transformedMd
+      ? richHtml
+      : renderHeyBoxRichHtml(previewMarkdown, imageBase64Map, []);
+
   const previewHtml = generateHeyBoxPreviewHtml({
     title,
-    markdown: transformedMd,
-    richHtml,
+    markdown: previewMarkdown,
+    richHtml: previewRichHtml,
     metadata,
     coverBuffer,
   });
 
   return {
     article,
-    post: article, // for backward compatibility
     title,
     markdown: transformedMd,
     richHtml,

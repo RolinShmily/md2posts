@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import YAML from 'yaml';
+import { findGitRoot } from './git.js';
 import type {
   SourceAdapter,
   SourcePost,
@@ -13,6 +14,8 @@ import type {
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
+
+export { findGitRoot };
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif']);
 
@@ -94,21 +97,6 @@ function collectLocalAssets(rootDir: string): string[] {
 /**
  * Traverses parent directories upwards starting from startDir to locate the containing .git directory.
  */
-export function findGitRoot(startDir: string): string | null {
-  let current = path.resolve(startDir);
-  while (true) {
-    if (fs.existsSync(path.join(current, '.git'))) {
-      return current;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-  return null;
-}
-
 export class FsSource implements SourceAdapter {
   private readonly postsRoot: string;
   private readonly repoRoot?: string;
@@ -121,8 +109,10 @@ export class FsSource implements SourceAdapter {
   private readonly siteUrl: string;
   private readonly postPathPattern: string;
   private readonly fieldMapping: Required<FieldMapping>;
+  private readonly sortOrder: 'asc' | 'desc';
 
   constructor(options: FsSourceOptions) {
+    this.sortOrder = options.sortOrder || 'asc';
     this.repoUrl = options.repoUrl ? options.repoUrl.trim() : undefined;
     this.gitRemote = options.gitRemote ? options.gitRemote.trim() : 'origin';
     this.gitBranch = options.gitBranch ? options.gitBranch.trim() : 'main';
@@ -168,7 +158,7 @@ export class FsSource implements SourceAdapter {
    * Prepares the source repository before scanning.
    * If gitPull is enabled (default), ensures remote repository is cloned and pulled up to date.
    */
-  public async prepare(options: PrepareOptions = {}): Promise<void> {
+  public async prepare(_options: PrepareOptions = {}): Promise<void> {
     if (!this.gitPull) return;
 
     let targetDir = this.repoRoot;
@@ -252,13 +242,15 @@ export class FsSource implements SourceAdapter {
       }
     }
 
-    // Sort descending by publishedAt, then descending by slug (numeric-aware)
+    // Sort posts: default ascending (from earliest / lowest slug number 1 to latest)
+    // Supports numeric-aware comparison so [1] maps naturally to Article 1 (e.g. 1-xxx, 2-xxx ... 61-xxx)
+    const dir = this.sortOrder === 'desc' ? -1 : 1;
     posts.sort((a, b) => {
       const dateA = a.publishedAt || '';
       const dateB = b.publishedAt || '';
-      const cmp = dateB.localeCompare(dateA);
-      if (cmp !== 0) return cmp;
-      return b.id.localeCompare(a.id, undefined, { numeric: true });
+      const cmp = dateA.localeCompare(dateB);
+      if (cmp !== 0) return cmp * dir;
+      return a.id.localeCompare(b.id, undefined, { numeric: true }) * dir;
     });
 
     return posts;

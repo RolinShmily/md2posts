@@ -33,6 +33,7 @@ function printUsage() {
   preview <slug>          离线渲染指定文章为独立页面（支持 --to wechat 或 --to heybox）
   push [slug1 slug2 ...]  推送文章到草稿箱（支持 --to wechat / heybox / all，不传 slug 进入勾选列表）
   sync                    自动增量同步【新文章】到草稿箱（默认忽略老文章修改，受 maxPerRun 限制）
+  login                   登录并保存平台凭据 (例如: md2posts login --to heybox)
   themes                  列出内置的 28 套精美主题
 
 通用选项:
@@ -43,6 +44,8 @@ function printUsage() {
   --repo <path>           指定/切换要 pull 的本地 Git 博客仓库路径（留空则自动从 postsRoot 寻找 .git）
   --posts <path>          指定/切换博客文章所在目录 (如: /path/to/blog/content/posts)
   --branch <name>         指定 pull 的 Git 分支名 (默认: main 或当前分支)
+  --sort <asc|desc>       文章列表排序方式: asc (默认，从第 1 篇顺排) | desc (倒序，最新发表在最前)
+  --asc / --desc          快捷指定正序或倒序
   -i, --select            进入交互式文章选择推送模式
   --filter <keyword>      交互式选择时按关键词过滤文章 (匹配 slug 或标题)
   --include-updated       在 sync 时破例把修改过的历史文章也纳入自动推送
@@ -63,6 +66,9 @@ function loadConfigWithOverrides(configPath?: string, values?: any) {
   if (values.repo) config.source.repoRoot = path.resolve(values.repo);
   if (values.posts) config.source.postsRoot = path.resolve(values.posts);
   if (values.branch) config.source.gitBranch = String(values.branch).trim();
+  if (values.sort) config.source.sortOrder = String(values.sort).toLowerCase() as 'asc' | 'desc';
+  if (values.asc) config.source.sortOrder = 'asc';
+  if (values.desc) config.source.sortOrder = 'desc';
   return config;
 }
 
@@ -133,7 +139,7 @@ async function runCheck(configPath?: string, cliValues?: any) {
         console.log(`            └─ 微信裁剪标题: "${item.normalizedTitle}"`);
       }
       if (!item.hasCover) {
-        console.log(`            └─ ⚠️  无 frontmatter 封面，将触发自动兜底`);
+        console.log(`            └─ ⚠️  无 frontmatter 封面 (image:)，将使用 sync.defaultCover 兜底；若未配置则本次同步会因缺封面而失败`);
       }
     }
     console.log('');
@@ -259,19 +265,24 @@ function formatStatusBadge(status: CheckPostItem['status']): string {
 
 async function promptInteractiveSelection(
   pipeline: SyncPipeline,
-  filterKeyword?: string
+  filterKeyword?: string,
+  initialSortOrder: 'asc' | 'desc' = 'asc'
 ): Promise<string[]> {
   const report = await pipeline.check();
-  let publishedItems = report.items.filter((item) => item.status !== 'draft');
+  let baseItems = report.items.filter((item) => item.status !== 'draft');
 
   if (filterKeyword) {
     const kw = filterKeyword.toLowerCase();
-    publishedItems = publishedItems.filter(
+    baseItems = baseItems.filter(
       (item) => item.id.toLowerCase().includes(kw) || item.title.toLowerCase().includes(kw)
     );
   }
 
-  // Sort priority: 'new' first, 'updated' second, then others (keeping newest date order within each group)
+  if (baseItems.length === 0) {
+    console.log('未找到符合条件的已发布文章。\n');
+    return [];
+  }
+
   const statusPriority: Record<CheckPostItem['status'], number> = {
     new: 0,
     updated: 1,
@@ -279,29 +290,8 @@ async function promptInteractiveSelection(
     baselined: 3,
     draft: 4,
   };
-  publishedItems.sort((a, b) => statusPriority[a.status] - statusPriority[b.status]);
 
-  if (publishedItems.length === 0) {
-    console.log('未找到符合条件的已发布文章。\n');
-    return [];
-  }
-
-  console.log('📋 可选推送文章列表（优先展示【新增】与【已修改】文章）：\n');
-  console.log(`  ${'序号'.padEnd(4)}  ${'状态'.padEnd(8)}  ${'发布日期'.padEnd(10)}  ${'Slug'.padEnd(22)}  标题`);
-  console.log('  ' + '─'.repeat(78));
-
-  publishedItems.forEach((item, idx) => {
-    const numStr = `[${idx + 1}]`.padStart(4);
-    const badge = formatStatusBadge(item.status);
-    const dateStr = (item.publishedAt || '----------').padEnd(10);
-    const slugStr = item.id.padEnd(22);
-    console.log(`  ${numStr}  ${badge}  ${dateStr}  ${slugStr}  ${item.normalizedTitle}`);
-  });
-
-  console.log('\n💡 输入说明：');
-  console.log('   - 输入序号可单选或多选：如 `1`、`1,3,5`、`1-3`');
-  console.log('   - 输入 `new` 选全部新增文章，输入 `updated` 选全部已修改文章');
-  console.log('   - 也可直接输入文章 slug（如 `45-immortalwrt-1`），输入 `q` 取消退出\n');
+  let currentSort: 'asc' | 'desc' = initialSortOrder;
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -309,8 +299,49 @@ async function promptInteractiveSelection(
   });
 
   try {
-    const answer = await rl.question('👉 请输入要推送的文章: ');
-    return parseArticleSelection(answer, publishedItems);
+    while (true) {
+      const sortedItems = [...baseItems];
+      const dir = currentSort === 'desc' ? -1 : 1;
+
+      sortedItems.sort((a, b) => {
+        const pDiff = statusPriority[a.status] - statusPriority[b.status];
+        if (pDiff !== 0) return pDiff;
+        const dateA = a.publishedAt || '';
+        const dateB = b.publishedAt || '';
+        const cmp = dateA.localeCompare(dateB);
+        if (cmp !== 0) return cmp * dir;
+        return a.id.localeCompare(b.id, undefined, { numeric: true }) * dir;
+      });
+
+      console.log(`📋 可选推送文章列表（当前: ${currentSort === 'asc' ? '【正序 (从第 1 篇起)】' : '【倒序 (最新发表在前)】'}）：\n`);
+      console.log(`  ${'序号'.padEnd(4)}  ${'状态'.padEnd(8)}  ${'发布日期'.padEnd(10)}  ${'Slug'.padEnd(24)}  标题`);
+      console.log('  ' + '─'.repeat(80));
+
+      sortedItems.forEach((item, idx) => {
+        const numStr = `[${idx + 1}]`.padStart(4);
+        const badge = formatStatusBadge(item.status);
+        const dateStr = (item.publishedAt || '----------').padEnd(10);
+        const slugStr = item.id.padEnd(24);
+        console.log(`  ${numStr}  ${badge}  ${dateStr}  ${slugStr}  ${item.normalizedTitle}`);
+      });
+
+      console.log('\n💡 输入说明：');
+      console.log('   - 输入序号可单选或多选：如 `1`、`1,3,5`、`1-5`（序号严格对应文章篇号）');
+      console.log('   - 输入 `new` 选全部新增文章，输入 `updated` 选全部已修改文章');
+      console.log('   - 输入 `r` 或 `sort` 可瞬间切换【正序 / 倒序】');
+      console.log('   - 也可直接输入文章 slug（如 `1-minecraft-1`），输入 `q` 取消退出\n');
+
+      const answer = await rl.question('👉 请输入要推送的文章 (输入 r 翻转排序，q 退出): ');
+      const trimmed = answer.trim().toLowerCase();
+
+      if (trimmed === 'r' || trimmed === 'sort' || trimmed === 'reverse') {
+        currentSort = currentSort === 'asc' ? 'desc' : 'asc';
+        console.log(`\n🔄 已切换排序方式为: ${currentSort === 'asc' ? '【正序 (从第 1 篇起)】' : '【倒序 (最新发表在前)】'}\n`);
+        continue;
+      }
+
+      return parseArticleSelection(answer, sortedItems);
+    }
   } finally {
     rl.close();
   }
@@ -334,7 +365,11 @@ async function runPush(
 
   let targetSlugs = [...slugs];
   if (targetSlugs.length === 0 || options.interactive) {
-    const selected = await promptInteractiveSelection(pipeline, options.filter);
+    const selected = await promptInteractiveSelection(
+      pipeline,
+      options.filter,
+      config.source.sortOrder || 'asc'
+    );
     for (const s of selected) {
       if (!targetSlugs.includes(s)) targetSlugs.push(s);
     }
@@ -449,6 +484,26 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
   console.log('');
 }
 
+async function runLogin(configPath?: string, cliValues?: any) {
+  printBanner();
+  const config = loadConfigWithOverrides(configPath, cliValues);
+  const target = (cliValues?.to || 'heybox').toLowerCase();
+
+  if (target === 'heybox' || target === 'xiaoheihe') {
+    const client = new HeyBoxClient({
+      sessionFile: config.heybox?.sessionFile,
+      browserChannel: config.heybox?.browserChannel,
+    });
+    console.log('正在启动小黑盒浏览器交互式扫码登录...\n');
+    const sessionFile = await client.login();
+    console.log(`\n✓ 小黑盒登录态已成功保存至: ${sessionFile}`);
+    console.log('后续执行 md2posts push --to heybox 即可全自动直接推入小黑盒草稿箱！\n');
+    return;
+  }
+
+  console.log(`目前仅支持小黑盒登录凭据捕获: md2posts login --to heybox\n`);
+}
+
 function runThemes() {
   printBanner();
   const themes = listThemes();
@@ -483,6 +538,9 @@ async function main() {
       theme: { type: 'string', short: 't' },
       select: { type: 'boolean', short: 'i' },
       filter: { type: 'string' },
+      sort: { type: 'string' },
+      asc: { type: 'boolean' },
+      desc: { type: 'boolean' },
       'include-updated': { type: 'boolean' },
       remote: { type: 'boolean' },
       except: { type: 'string' },
@@ -555,6 +613,11 @@ async function main() {
 
     case 'themes':
       runThemes();
+      break;
+
+    case 'login':
+    case 'heybox-login':
+      await runLogin(configPath, parsed.values);
       break;
 
     default:

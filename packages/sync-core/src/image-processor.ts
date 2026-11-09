@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import type { WeChatClient } from '@md2posts/wechat-sdk';
-import { findGitRoot } from '@md2posts/sources';
+import { resolveLocalAsset } from '@md2posts/sources';
 import type { StateStore } from './state-store.js';
 
 export interface ProcessedImage {
@@ -19,51 +19,6 @@ export interface ImageProcessorOptions {
   maxWidth?: number;             // default 1920px
   downloadRemote?: boolean;      // default true
   remoteTimeoutMs?: number;      // default 15_000
-}
-
-/**
- * Resolves a local image reference against the post directory and configured assetRoots.
- */
-export function resolveLocalAssetPath(
-  rawRef: string,
-  postDir: string,
-  assetRoots: string[] = ['{postDir}']
-): string | null {
-  if (!rawRef || /^https?:\/\//i.test(rawRef) || rawRef.startsWith('data:')) {
-    return null;
-  }
-
-  let decoded = rawRef.trim();
-  try {
-    decoded = decodeURIComponent(decoded);
-  } catch {
-    // Keep raw if malformed percent-encoding
-  }
-
-  if (path.isAbsolute(decoded) && fs.existsSync(decoded) && fs.statSync(decoded).isFile()) {
-    return decoded;
-  }
-
-  const cleanRel = decoded.replace(/^\.\/+/, '').replace(/^\/+/, '');
-  const roots = assetRoots.length > 0 ? assetRoots : ['{postDir}'];
-
-  for (const rootPattern of roots) {
-    const rootDir = rootPattern
-      .replace(/\{postDir\}/g, postDir)
-      .replace(/\{repoRoot\}/g, () => findGitRoot(postDir) || path.dirname(path.dirname(postDir)));
-    const candidate = path.resolve(rootDir, cleanRel);
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      return candidate;
-    }
-  }
-
-  // Fallback directly in postDir
-  const directCandidate = path.resolve(postDir, cleanRel);
-  if (fs.existsSync(directCandidate) && fs.statSync(directCandidate).isFile()) {
-    return directCandidate;
-  }
-
-  return null;
 }
 
 export class ImageProcessor {
@@ -244,7 +199,7 @@ export class ImageProcessor {
       return wechatUrl;
     }
 
-    const fullPath = resolveLocalAssetPath(rawRef, postDir, assetRoots);
+    const fullPath = resolveLocalAsset(rawRef, postDir, assetRoots);
     if (!fullPath) {
       return null;
     }

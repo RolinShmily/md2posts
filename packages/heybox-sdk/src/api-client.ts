@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import sharp from 'sharp';
 import MarkdownIt from 'markdown-it';
 import {
@@ -57,6 +58,24 @@ export function resolveHeyBoxSessionFile(specified?: string): string {
   return localCache;
 }
 
+/**
+ * Builds the exact `<img>` shape XiaoHeiHe's editor itself produces.
+ *
+ * Verified empirically against the official editor output:
+ * - `data-original` only  -> 1 image node (correct)
+ * - `src` + `data-original` -> 2 image nodes (duplicated, one squashed thumb)
+ * - `src` only            -> 2 image nodes
+ *
+ * So we must never emit a `src` attribute here.
+ */
+export function toXiaoHeiHeImgTag(media: {
+  url: string;
+  width: number;
+  height: number;
+}): string {
+  return `<img data-original="${media.url}" data-width="${media.width}" data-height="${media.height}" />`;
+}
+
 export class HeyBoxApiClient {
   private readonly sessionPath: string;
   private session: HeyBoxSession | null = null;
@@ -75,15 +94,24 @@ export class HeyBoxApiClient {
 
     try {
       const data = JSON.parse(fs.readFileSync(this.sessionPath, 'utf8'));
-      if (!Array.isArray(data.cookies) || data.cookies.length === 0 || !data.user_id) {
+      if (!Array.isArray(data.cookies) || data.cookies.length === 0) {
         return null;
       }
+      const userId =
+        data.user_id ||
+        data.cookies.find((c: any) => c.name === 'heybox_id')?.value ||
+        data.cookies.find((c: any) => c.name === 'user_id')?.value;
+
+      if (!userId) {
+        return null;
+      }
+
       const cookieHeader = data.cookies
         .map((c: any) => `${c.name}=${c.value}`)
         .join('; ');
 
       this.session = {
-        userId: String(data.user_id),
+        userId: String(userId),
         cookieHeader,
         cookies: data.cookies,
       };
@@ -347,6 +375,7 @@ export class HeyBoxApiClient {
   public async createArticleDraft(params: {
     title: string;
     markdown: string;
+    richHtml?: string;
     images?: Array<{ buffer: Buffer; filename: string; mimetype?: string }>;
     communities?: string[];
     hashtags?: string[];
@@ -354,20 +383,25 @@ export class HeyBoxApiClient {
   }): Promise<CreateDraftResult> {
     const { title, images = [], communities = [], hashtags = [] } = params;
 
-    // 1. Render markdown with heading normalization
-    const md = new MarkdownIt({ html: true, breaks: true, linkify: true });
-    md.renderer.rules.heading_open = (tokens, idx) => {
-      const level = parseInt(tokens[idx].tag.slice(1), 10);
-      return `<${level <= 2 ? 'h2' : 'h3'}>`;
-    };
-    md.renderer.rules.heading_close = (tokens, idx) => {
-      const level = parseInt(tokens[idx].tag.slice(1), 10);
-      return `</${level <= 2 ? 'h2' : 'h3'}>\n`;
-    };
-    let renderedHtml = md.render(params.markdown);
+    let renderedHtml = params.richHtml;
+    if (!renderedHtml) {
+      const md = new MarkdownIt({ html: true, breaks: true, linkify: false });
+      md.renderer.rules.heading_open = (tokens, idx) => {
+        const level = parseInt(tokens[idx].tag.slice(1), 10);
+        return `<${level <= 2 ? 'h2' : 'h3'}>`;
+      };
+      md.renderer.rules.heading_close = (tokens, idx) => {
+        const level = parseInt(tokens[idx].tag.slice(1), 10);
+        return `</${level <= 2 ? 'h2' : 'h3'}>\n`;
+      };
+      renderedHtml = md.render(params.markdown);
+    }
 
-    // 2. Upload all images to Tencent Cloud COS
+    // 2. Upload all images to Tencent Cloud COS (deduplicated by content hash)
     const uploadedImages: UploadedMediaResult[] = [];
+    // Content hash -> upload result, so identical bytes are only uploaded once
+    // even when they appear under multiple filenames.
+    const uploadsByHash = new Map<string, UploadedMediaResult>();
 
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
@@ -375,36 +409,68 @@ export class HeyBoxApiClient {
         params.onProgress(i + 1, images.length, img.filename);
       }
 
-      const res = await this.uploadImage(img.buffer, img.filename, img.mimetype || 'image/png');
-      uploadedImages.push(res);
+      const contentHash = crypto.createHash('sha256').update(img.buffer).digest('hex');
+      let res = uploadsByHash.get(contentHash);
+      if (!res) {
+        res = await this.uploadImage(img.buffer, img.filename, img.mimetype || 'image/png');
+        uploadsByHash.set(contentHash, res);
+      } else {
+        console.log(`[HeyBox] 跳过重复素材（内容相同）：${img.filename}`);
+      }
+      // Keep the filename alias so HTML replacement still resolves this reference.
+      uploadedImages.push({ ...res, filename: img.filename });
 
       const cleanName = path.basename(img.filename);
-      const isCover = cleanName === 'cover_16_9.jpg' || cleanName.includes('cover');
 
-      if (isCover) {
-        renderedHtml += `<img src="${res.url}" data-original="${res.url}" data-type="image" data-width="${res.width}" data-height="${res.height}">`;
-      } else {
-        const regex = new RegExp(`(<img\\b[^>]*?\\bsrc=["'])(?:\\./)?(?:assets/)?${cleanName}(["'][^>]*>)`, 'gi');
-        renderedHtml = renderedHtml.replace(
-          regex,
-          `$1${res.url}$2 data-original="${res.url}" data-type="image" data-width="${res.width}" data-height="${res.height}"`
+      // Replace both regular body images and the cover. The cover now also appears at the top
+      // of the body for HeyBox, so its inlined Base64 must be swapped for the CDN tag too.
+      {
+        const rawName = cleanName;
+        const encName = encodeURIComponent(cleanName);
+        const candidates = rawName === encName ? [rawName] : [rawName, encName];
+
+        // IMPORTANT: XiaoHeiHe's editor emits `<img data-original=... data-width=... data-height=...>`
+        // with NO `src` attribute. When `src` is present the editor materializes TWO image nodes
+        // per tag (a squashed thumb + a cropped full-size copy), so images appear duplicated.
+        const imgTag = toXiaoHeiHeImgTag(res);
+
+        for (const name of candidates) {
+          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`<img\\b[^>]*?\\bsrc=["'](?:\\./)?(?:assets/)?${escaped}["'][^>]*>`, 'gi');
+          renderedHtml = renderedHtml.replace(regex, imgTag);
+        }
+
+        // Also replace inlined Base64 data URL if present
+        const b64Prefix = `data:${img.mimetype || 'image/png'};base64,${img.buffer.slice(0, 48).toString('base64').slice(0, 32)}`;
+        const b64Regex = new RegExp(
+          `<img\\b[^>]*?\\bsrc=["']${b64Prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"']*["'][^>]*>`,
+          'gi'
         );
+        renderedHtml = renderedHtml.replace(b64Regex, imgTag);
       }
     }
 
     // 3. Resolve topic and hashtag IDs
     const selection = await this.resolveTopics(communities, hashtags);
 
-    // 4. Build XiaoHeiHe blocks payload with integer dimensions
-    const blocks: any[] = [
-      { type: 'html', text: renderedHtml },
-      ...uploadedImages.map((img) => ({
+    // 4. Build XiaoHeiHe blocks payload:
+    // Block 0 MUST contain the entire article HTML.
+    // XiaoHeiHe article API treats Block 0 as the full article body, and subsequent blocks as media metadata.
+    const seenImageUrls = new Set<string>();
+    const imageBlocks: Array<{ type: string; url: string; width: string; height: string }> = [];
+    for (const img of uploadedImages) {
+      if (img.filename.includes('cover')) continue;
+      if (seenImageUrls.has(img.url)) continue; // identical bytes already listed
+      seenImageUrls.add(img.url);
+      imageBlocks.push({
         type: 'img',
         url: img.url,
-        width: img.width,
-        height: img.height,
-      })),
-    ];
+        width: String(img.width),
+        height: String(img.height),
+      });
+    }
+
+    const blocks: any[] = [{ type: 'html', text: renderedHtml }, ...imageBlocks];
 
     const form: Record<string, string> = {
       title,
@@ -414,7 +480,7 @@ export class HeyBoxApiClient {
       draft: '1',
       view_limit: '1',
       original: '1',
-      words_count: String(renderedHtml.length),
+      words_count: String(renderedHtml.replace(/<[^>]+>/g, '').length),
     };
 
     if (selection.topicIds) {

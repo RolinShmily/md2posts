@@ -5,11 +5,19 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   renderCodeBlockToImage,
+  buildCodeBlockSvg,
+  formatCodeAsNativeTerminalBox,
   crop16x9Cover,
+  parseMarkdownTable,
+  renderTableToImage,
+  formatTableAsFallbackText,
   inferHeyBoxMetadata,
   prepareHeyBoxArticle,
+  renderHeyBoxRichHtml,
+  sanitizeHeyBoxHtml,
+  selectReferencedAssets,
   HeyBoxClient,
-  HeyBoxPublisher,
+  HeyBoxClient,
   type HeyBoxArticleInput,
 } from '../src/index.js';
 
@@ -86,6 +94,7 @@ test('prepareHeyBoxArticle and HeyBoxClient export complete bundle with code ima
   try {
     const client = new HeyBoxClient({
       assetRoots: ['{postDir}'],
+      codeBlockMode: 'image',
     });
 
     const outDir = path.join(tmpDir, 'heybox-out');
@@ -120,6 +129,285 @@ test('prepareHeyBoxArticle and HeyBoxClient export complete bundle with code ima
     assert.equal(publishRes.codeImagesCount, 1);
     assert.equal(publishRes.publishedViaCli, false);
     assert.match(publishRes.message, /\[演练完成\]/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('parseMarkdownTable and renderTableToImage render valid PNG buffer and fallback text', async () => {
+  const tableMd = `
+| 参数 | 说明 | 默认值 |
+| :--- | :---: | ---: |
+| port | 服务端口 | 8080 |
+| host | 监听地址 | 0.0.0.0 |
+`;
+
+  const parsed = parseMarkdownTable(tableMd);
+  assert.ok(parsed, 'Table should be parsed successfully');
+  assert.deepEqual(parsed.headers, ['参数', '说明', '默认值']);
+  assert.deepEqual(parsed.alignments, ['left', 'center', 'right']);
+  assert.equal(parsed.rows.length, 2);
+
+  const pngBuf = await renderTableToImage(parsed);
+  assert.ok(pngBuf.length > 500, 'PNG table card should be generated');
+  assert.equal(pngBuf[0], 0x89);
+  assert.equal(pngBuf[1], 0x50);
+  assert.equal(pngBuf[2], 0x4e);
+  assert.equal(pngBuf[3], 0x47);
+
+  const fallback = formatTableAsFallbackText(parsed);
+  assert.match(fallback, /数据表格/);
+  assert.match(fallback, /服务端口/);
+});
+
+test('renderHeyBoxRichHtml generates clean, stable HTML without nested <p> or raw <table>', async () => {
+  const complexMarkdown = `
+# 一级大标题
+
+这是正文段落，带外部链接 [官方文档](https://nodejs.org) 和行内代码 \`const x = 100\` 以及删除线 ~~废弃旧版~~。
+
+\`\`\`bash
+echo "$HOME" && pnpm install $PKG
+\`\`\`
+
+中间文本。
+
+\`\`\`bash
+echo "$HOME" && pnpm install $PKG
+\`\`\`
+
+| 命令 | 作用 |
+| :--- | :--- |
+| build | 构建项目 |
+| test | 自动化测试 |
+
+列表：
+- [ ] 待办 1
+- [x] 完成 2
+
+> 这是引用文本
+`;
+
+  const prepared = await prepareHeyBoxArticle({
+    id: 'stability-test',
+    title: '稳定性测试文章',
+    bodyMarkdown: complexMarkdown,
+    canonicalUrl: 'https://example.com/test-article',
+  });
+
+  // 1. Check no nested <p><p> tags exist
+  assert.doesNotMatch(prepared.richHtml, /<p>\s*<p>/i, 'Should not contain nested <p><p>');
+  assert.doesNotMatch(prepared.richHtml, /<\/p>\s*<\/p>/i, 'Should not contain nested </p></p>');
+
+  // 2. Check no raw <table> tags exist (converted to images)
+  assert.doesNotMatch(prepared.richHtml, /<table\b/i, 'Should not output raw <table> HTML');
+  assert.match(prepared.richHtml, /!\[数据表格\]\(assets\/table_1\.png\)|data:image\/png;base64/);
+
+  // 3. Check external link normalized to **text**（url）
+  assert.match(prepared.richHtml, /<strong>官方文档<\/strong>（https:\/\/nodejs\.org）/);
+  assert.doesNotMatch(prepared.richHtml, /<a\b[^>]*href=["']https:\/\/nodejs\.org/i);
+
+  // 4. Check inline code and strikethrough normalized to strong
+  assert.match(prepared.richHtml, /<strong>const x = 100<\/strong>/);
+  assert.match(prepared.richHtml, /<strong>废弃旧版<\/strong>/);
+
+  // 5. Check task list checkboxes
+  assert.match(prepared.richHtml, /☐ 待办 1/);
+  assert.match(prepared.richHtml, /☑ 完成 2/);
+
+  // 6. Check headings normalized to H2 and H3
+  assert.match(prepared.richHtml, /<h2>一级大标题<\/h2>/);
+  assert.doesNotMatch(prepared.richHtml, /<h1>/i);
+
+  // 7. Check multiple code blocks with $ variables in 'auto' mode become native terminal blocks
+  assert.match(prepared.richHtml, /💻 终端命令 · BASH/);
+  assert.match(prepared.richHtml, /echo &quot;\$HOME&quot; &amp;&amp; pnpm install \$PKG/);
+  assert.equal(prepared.assets.has('assets/table_1.png'), true);
+
+  // 8. Test 'image' mode explicitly to verify PNG card generation
+  const imageModePrep = await prepareHeyBoxArticle(
+    {
+      id: 'image-mode-test',
+      title: '图片模式测试',
+      bodyMarkdown: complexMarkdown,
+      canonicalUrl: 'https://example.com/test-article',
+    },
+    { codeBlockMode: 'image' }
+  );
+  assert.equal(imageModePrep.assets.has('assets/code_1_bash.png'), true);
+  assert.equal(imageModePrep.assets.has('assets/code_2_bash.png'), true);
+  assert.equal(imageModePrep.assets.has('assets/table_1.png'), true);
+});
+
+test('code rendering preserves indentation in both terminal blocks and image cards', async () => {
+  const indentedCode = 'def f(x):\n    if x:\n        return 1\n    return 0';
+
+  // 1. Native terminal box must keep indentation via &nbsp; (HTML collapses raw spaces)
+  const terminalBox = formatCodeAsNativeTerminalBox(indentedCode, 'python');
+  assert.match(terminalBox, /&nbsp;&nbsp;&nbsp;&nbsp;if x:/);
+  assert.match(terminalBox, /&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 1/);
+
+  // 2. Image card must keep indentation (SVG collapses leading spaces without xml:space)
+  const svgSource = buildCodeBlockSvg(indentedCode, 'python');
+  assert.match(svgSource, /xml:space="preserve"/);
+});
+
+test('HeyBoxApiClient recognizes session saved by Playwright storageState without root user_id', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-session-test-'));
+  const sessionPath = path.join(tmpDir, 'heybox-session.json');
+
+  // Playwright storageState structure
+  const playwrightSession = {
+    cookies: [
+      {
+        name: 'heybox_id',
+        value: '98765432',
+        domain: '.xiaoheihe.cn',
+        path: '/',
+      },
+      {
+        name: 'token',
+        value: 'mock_token_abc',
+        domain: '.xiaoheihe.cn',
+        path: '/',
+      },
+    ],
+    origins: [],
+  };
+
+  fs.writeFileSync(sessionPath, JSON.stringify(playwrightSession));
+
+  try {
+    const client = new HeyBoxClient({ sessionFile: sessionPath });
+    assert.equal(client.hasSession(), true, 'Should detect valid session from Playwright cookies');
+    const session = client.apiClient.getSession();
+    assert.ok(session);
+    assert.equal(session.userId, '98765432');
+    assert.match(session.cookieHeader, /heybox_id=98765432/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('selectReferencedAssets skips unreferenced siblings and the duplicated cover source', () => {
+  const coverSrc = Buffer.from('cover-source-bytes');
+  const referenced = Buffer.from('referenced-image-bytes');
+
+  const prepared = {
+    richHtml: `<p><img src="data:image/png;base64,${referenced
+      .subarray(0, 96)
+      .toString('base64')
+      .slice(0, 64)}..." /></p>`,
+    markdown: '',
+    assets: new Map<string, Buffer>([
+      ['cover_16_9.jpg', Buffer.from('cropped-cover-bytes')],
+      ['assets/cover.png', coverSrc], // same picture as cover source, not used in body
+      ['assets/inline.png', referenced], // actually referenced
+      ['assets/unused.png', Buffer.from('never-referenced')],
+    ]),
+  } as any;
+
+  const selected = selectReferencedAssets(prepared);
+  const names = selected.map((s) => s.filename);
+
+  assert.ok(names.includes('cover_16_9.jpg'), 'cover must always be uploaded');
+  assert.ok(names.includes('assets/inline.png'), 'referenced image must be uploaded');
+  assert.ok(!names.includes('assets/cover.png'), 'cover source duplicate must be skipped');
+  assert.ok(!names.includes('assets/unused.png'), 'unreferenced image must be skipped');
+  assert.equal(selected.length, 2);
+});
+
+test('createArticleDraft uploads identical content once and dedupes img blocks', async () => {
+  const client = new (await import('../src/api-client.js')).HeyBoxApiClient();
+
+  let uploadCalls = 0;
+  (client as any).uploadImage = async (buffer: Buffer, filename: string) => {
+    uploadCalls++;
+    return { url: 'https://cdn.example.com/same.png', width: 10, height: 10, filename };
+  };
+  (client as any).resolveTopics = async () => ({ topicIds: '', hashtagList: [] });
+
+  let sentForm: Record<string, string> | undefined;
+  (client as any).request = async (_path: string, opts: any) => {
+    sentForm = opts.form;
+    return { link_id: 123 };
+  };
+
+  const payload = Buffer.from('IDENTICAL-CONTENT');
+  const res = await client.createArticleDraft({
+    title: 'T',
+    markdown: 'x',
+    richHtml: `<p><img src="data:image/png;base64,${payload
+      .subarray(0, 96)
+      .toString('base64')
+      .slice(0, 64)}..." /></p>`,
+    images: [
+      { filename: 'assets/one.png', buffer: payload, mimetype: 'image/png' },
+      { filename: 'assets/two.png', buffer: Buffer.from('IDENTICAL-CONTENT'), mimetype: 'image/png' },
+    ],
+  });
+
+  assert.equal(res.draftId, '123');
+  assert.equal(uploadCalls, 1, 'identical bytes must only be uploaded once');
+
+  const blocks = JSON.parse(sentForm!.text);
+  const imgBlocks = blocks.filter((b: any) => b.type === 'img');
+  assert.equal(imgBlocks.length, 1, 'duplicate img metadata blocks must be collapsed');
+});
+
+test('toXiaoHeiHeImgTag emits data-original only (a src attribute duplicates nodes)', async () => {
+  const { toXiaoHeiHeImgTag } = await import('../src/api-client.js');
+  const tag = toXiaoHeiHeImgTag({ url: 'https://cdn/x/thumb.png', width: 720, height: 140 });
+
+  assert.match(tag, /data-original="https:\/\/cdn\/x\/thumb\.png"/);
+  assert.match(tag, /data-width="720"/);
+  assert.match(tag, /data-height="140"/);
+  // Verified against the official editor: presence of `src` makes the editor create
+  // two image nodes per tag (squashed thumb + cropped full copy), i.e. duplicate images.
+  assert.doesNotMatch(tag, /\bsrc=/);
+});
+
+test('cover comes only from frontmatter or defaultCover, and is prepended to the body', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-cover-top-'));
+  const postDir = path.join(tmpDir, 'cover-post');
+  fs.mkdirSync(postDir);
+
+  // 16:9-ish cover image so crop16x9Cover takes the simple path
+  const coverPath = path.join(postDir, 'shot.png');
+  await (await import('sharp')).default({
+    create: { width: 1280, height: 720, channels: 3, background: '#334455' },
+  })
+    .png()
+    .toFile(coverPath);
+
+  try {
+    const baseArticle = {
+      id: 'cover-post',
+      title: 'Cover Post',
+      bodyMarkdown: '# 小节\n\n正文内容。',
+      canonicalUrl: 'https://blog.example.com/posts/cover-post/',
+      postDir,
+      frontmatter: {},
+      localAssetPaths: [coverPath],
+    };
+
+    // 1) No frontmatter cover and no defaultCover -> NO cover at all.
+    //    A random sibling screenshot must never be picked as the cover.
+    const noCover = await prepareHeyBoxArticle(baseArticle);
+    assert.equal(noCover.coverBuffer, undefined, 'must not guess a cover from sibling assets');
+    assert.ok(!noCover.markdown.startsWith('![封面]'));
+    assert.equal(noCover.assets.has('cover_16_9.jpg'), false);
+
+    // 2) defaultCover configured -> cover generated and prepended to the body.
+    const prepared = await prepareHeyBoxArticle(baseArticle, { defaultCoverPath: coverPath });
+
+    assert.ok(prepared.coverBuffer, 'cover should come from the configured defaultCover');
+    assert.ok(
+      prepared.markdown.startsWith('![封面](assets/cover_16_9.jpg)'),
+      'cover image must be prepended to the body before the first heading'
+    );
+    assert.match(prepared.richHtml, /^<p><img src="data:image\/jpeg;base64,/);
+    assert.ok(prepared.assets.has('cover_16_9.jpg'));
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

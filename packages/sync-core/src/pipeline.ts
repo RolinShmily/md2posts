@@ -3,14 +3,13 @@ import path from 'node:path';
 import { WeChatClient, WeChatError } from '@md2posts/wechat-sdk';
 import {
   HeyBoxClient,
-  HeyBoxPublisher,
   type HeyBoxPublishResult,
   type HeyBoxPreparedResult,
 } from '@md2posts/heybox-sdk';
 import { renderArticle, preprocessMarkdown } from '@md2posts/renderer';
-import { FsSource, SourcePost, findGitRoot } from '@md2posts/sources';
+import { FsSource, SourcePost, findGitRoot, resolveLocalAsset } from '@md2posts/sources';
 import { StateStore } from './state-store.js';
-import { ImageProcessor, resolveLocalAssetPath } from './image-processor.js';
+import { ImageProcessor } from './image-processor.js';
 import { normalizeWeChatTitle, normalizeWeChatDigest } from './normalize.js';
 import { sendSyncNotification } from './notifier.js';
 import type { AppConfig } from './config.js';
@@ -109,12 +108,13 @@ export class SyncPipeline {
       });
     this.heyboxPublisher =
       heyboxPublisher ||
-      new HeyBoxPublisher({
+      new HeyBoxClient({
         assetRoots: config.source.assetRoots,
         defaultCoverPath: config.sync.defaultCover,
         sessionFile: config.heybox?.sessionFile,
         browserChannel: config.heybox?.browserChannel,
         headless: config.heybox?.headless,
+        codeBlockMode: config.heybox?.codeBlockMode,
       });
   }
 
@@ -184,7 +184,7 @@ export class SyncPipeline {
         status,
         publishedAt: post.publishedAt,
         imageCount: pre.imageRefs.length,
-        hasCover: Boolean(post.coverRaw || post.localAssetPaths.length > 0 || this.config.sync.defaultCover),
+        hasCover: Boolean(post.coverRaw || this.config.sync.defaultCover),
         warningsCount: pre.warnings.length,
       });
     }
@@ -404,7 +404,7 @@ export class SyncPipeline {
     });
 
     for (const ref of preRes.imageRefs) {
-      const localPath = resolveLocalAssetPath(ref, post.postDir, assetRoots);
+      const localPath = resolveLocalAsset(ref, post.postDir, assetRoots);
       if (localPath && fs.existsSync(localPath)) {
         try {
           const buf = fs.readFileSync(localPath);
@@ -652,32 +652,30 @@ export class SyncPipeline {
       }
     }
 
-    // Resolve cover
+    // Resolve cover: explicit frontmatter cover -> configured sync.defaultCover.
+    // We deliberately do NOT guess a cover from arbitrary sibling screenshots or repo assets:
+    // that made thumbnails unpredictable. Set sync.defaultCover for a site-wide default.
     let coverLocalPath: string | null = null;
     if (post.coverRaw) {
-      coverLocalPath = resolveLocalAssetPath(post.coverRaw, post.postDir, assetRoots);
-    }
-    if (!coverLocalPath && post.localAssetPaths.length > 0) {
-      coverLocalPath = post.localAssetPaths[0];
+      coverLocalPath = resolveLocalAsset(post.coverRaw, post.postDir, assetRoots);
     }
     if (!coverLocalPath && this.config.sync.defaultCover) {
-      const defPath = path.resolve(this.config.sync.defaultCover);
+      // Support the {repoRoot} token so users can point at a repo asset (e.g. public/og/og.png)
+      const repoRoot = findGitRoot(post.postDir) || '';
+      const resolvedDefault = repoRoot
+        ? this.config.sync.defaultCover.replace(/\{repoRoot\}/g, repoRoot)
+        : this.config.sync.defaultCover;
+      const defPath = path.resolve(resolvedDefault);
       if (fs.existsSync(defPath)) {
         coverLocalPath = defPath;
       }
     }
-    if (!coverLocalPath) {
-      const repoRoot = findGitRoot(post.postDir);
-      if (repoRoot) {
-        const repoOg = path.join(repoRoot, 'public', 'og', 'og.png');
-        if (fs.existsSync(repoOg)) {
-          coverLocalPath = repoOg;
-        }
-      }
-    }
 
     if (!coverLocalPath) {
-      throw new Error(`[Pipeline] 文章 ${slug} 没有有效封面图片，且未找到可用兜底封面`);
+      throw new Error(
+        `[Pipeline] 文章 ${slug} 没有可用封面：frontmatter 缺少 image，且 sync.defaultCover 未配置或文件不存在。` +
+          `请在 config.yaml 中设置 sync.defaultCover（如 {repoRoot}/public/og/og.png）`
+      );
     }
 
     const coverUpload = await this.imageProcessor.uploadCover(

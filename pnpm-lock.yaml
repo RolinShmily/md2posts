@@ -45,6 +45,9 @@ importers:
 
   packages/heybox-sdk:
     dependencies:
+      '@md2posts/sources':
+        specifier: workspace:*
+        version: link:../sources
       markdown-it:
         specifier: ^14.1.0
         version: 14.3.3

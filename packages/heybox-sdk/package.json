@@ -16,6 +16,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@md2posts/sources": "workspace:*",
     "markdown-it": "^14.1.0",
     "playwright-core": "^1.65.0",
     "sharp": "^0.33.5"

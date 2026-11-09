@@ -8,7 +8,7 @@ import {
   crop16x9Cover,
   inferHeyBoxMetadata,
   prepareHeyBoxArticle,
-  HeyBoxPublisher,
+  HeyBoxClient,
   loadConfig,
 } from '../src/index.js';
 import type { SourcePost } from '@md2posts/sources';
@@ -64,7 +64,7 @@ test('inferHeyBoxMetadata defaults to clean unselected draft mode and respects c
   assert.deepEqual(customMeta.hashtags, ['专区标签1', '专区标签2']);
 });
 
-test('prepareHeyBoxArticle and HeyBoxPublisher export complete bundle with code images', async () => {
+test('prepareHeyBoxArticle and HeyBoxClient export complete bundle with code images', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-heybox-test-'));
   const postDir = path.join(tmpDir, 'cs2-guide');
   fs.mkdirSync(postDir);
@@ -91,7 +91,8 @@ test('prepareHeyBoxArticle and HeyBoxPublisher export complete bundle with code 
   try {
     const config = loadConfig();
     config.source.gitPull = false;
-    const publisher = new HeyBoxPublisher(config);
+    config.heybox = { codeBlockMode: 'image' };
+    const publisher = new HeyBoxClient(config);
 
     const outDir = path.join(tmpDir, 'heybox-out');
     const { bundleDir, prepared } = await publisher.exportPackage(mockPost, outDir);

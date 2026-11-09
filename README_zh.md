@@ -22,7 +22,16 @@
 | 发布平台 | 核心特性 | 解决痛点 |
 |---|---|---|
 | **微信公众号** (`wechat`) | 28 套内置排版主题、安全 Section 列表、代码块逐行高亮、外链转文末角标脚注、WebP 自适应压缩上传 | 彻底解决微信后台格式错乱、吞代码换行、图片超限问题 |
-| **小黑盒社区** (`heybox`) | **代码块/表格自动转深色卡片图**、16:9 封面智能裁切、ProseMirror H2/H3 规范对齐、支持直推草稿箱 | 彻底解决小黑盒 App 移动端代码折行拍扁的顽疾 |
+| **小黑盒社区** (`heybox`) | **代码块分级渲染**（短命令转原生可复制终端块，长源码转深色卡片图）、表格转卡片图、封面插入正文顶部、ProseMirror H2/H3 规范对齐、支持直推草稿箱 | 解决移动端代码被拍扁、截图缩放不可读、图片重复等问题 |
+
+---
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 项目架构：分层与依赖、各包职责、关键数据流、平台约束背后的设计决策 |
+| [docs/BUILD.md](docs/BUILD.md) | 构建与开发规范：环境、命令、编码/依赖约定、测试策略与五步验证流程 |
 
 ---
 
@@ -118,15 +127,18 @@ bash systemd/uninstall-systemd.sh [--purge]
 ```text
 md2posts/
 ├── packages/
-│   ├── wechat-sdk/     # 微信公众平台 API Client（Token 管理、素材上传、草稿箱，零依赖）
-│   ├── heybox-sdk/     # 小黑盒专属 SDK（代码卡片图渲染、16:9 封面裁剪、推流发布）
+│   ├── wechat-sdk/     # 微信公众平台 API Client（Token 管理、素材上传、草稿箱，零运行时依赖）
+│   ├── heybox-sdk/     # 小黑盒 SDK（文章转换、代码/表格卡片、封面、推流发布）
 │   ├── renderer/       # Markdown 渲染与 AST 预处理（28 套精美主题）
-│   ├── sources/        # 静态博客文件系统适配器（Hugo/Hexo 等、复合 SHA-256 计算）
-│   ├── sync-core/      # 核心多平台同步编排引擎与状态管理
+│   ├── sources/        # 博客扫描、复合 SHA-256、共享资产解析器
+│   ├── sync-core/      # 同步编排、状态存储、图片缓存与通知
 │   └── cli/            # 终端命令行交互入口
+├── docs/               # 架构与构建开发文档
 ├── systemd/            # Linux 定时后台服务套件
 └── config.yaml.example # 配置文件模板
 ```
+
+依赖关系与各包边界见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ---
 

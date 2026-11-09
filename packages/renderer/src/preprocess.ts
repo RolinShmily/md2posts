@@ -190,7 +190,7 @@ export function preprocessMarkdown(
 
     // 3d. Protect multi-line display math $$...$$
     if (protectMath && seg.includes('$$')) {
-      seg = seg.replace(/\$\$([\s\S]+?)\$\$/g, (fullMatch, innerMath, offset) => {
+      seg = seg.replace(/\$\$([\s\S]+?)\$\$/g, (_fullMatch, innerMath, offset) => {
         const lineOffset = seg.slice(0, offset).split('\n').length - 1;
         const cleanSnippet = innerMath.replace(/\s+/g, ' ').trim().slice(0, 60);
         warnings.push({

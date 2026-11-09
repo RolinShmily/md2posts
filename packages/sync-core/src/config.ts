@@ -44,6 +44,7 @@ export interface AppConfig {
     sessionFile?: string;
     browserChannel?: 'chrome' | 'msedge';
     headless?: boolean;
+    codeBlockMode?: 'auto' | 'terminal' | 'image';
   };
   notify?: {
     webhookUrl?: string;
@@ -57,7 +58,8 @@ function resolveConfigRelativePath(targetPath: string, baseDir: string): string 
   if (trimmed.startsWith('~/')) {
     return path.join(os.homedir(), trimmed.slice(2));
   }
-  if (trimmed.includes('{postDir}')) {
+  // Tokens are expanded later, once the concrete post (and its Git repo root) is known.
+  if (trimmed.includes('{postDir}') || trimmed.includes('{repoRoot}')) {
     return trimmed;
   }
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(baseDir, trimmed);
@@ -154,6 +156,7 @@ export function loadConfig(configPath?: string): AppConfig {
       layout: parsed.source?.layout || 'bundle',
       assetRoots: rawAssetRoots.map((r) => resolveConfigRelativePath(String(r), configDir)),
       gitPull: rawGitPull,
+      sortOrder: (parsed.source?.sortOrder as 'asc' | 'desc') || 'asc',
       siteUrl,
       postPathPattern: parsed.site?.postPath || '/posts/{slug}/',
       fieldMapping: parsed.fields || {},
@@ -204,6 +207,7 @@ export function loadConfig(configPath?: string): AppConfig {
         : undefined,
       browserChannel: parsed.heybox?.browserChannel,
       headless: parsed.heybox?.headless !== false,
+      codeBlockMode: parsed.heybox?.codeBlockMode,
     },
     notify: {
       webhookUrl:

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { chromium } from 'playwright-core';
 import type { HeyBoxPreparedResult } from './types.js';
 import { HeyBoxError } from './errors.js';
 
@@ -70,6 +70,7 @@ export async function loginInteractively(
   const browser = await chromium.launch({
     channel,
     headless: false,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
   const context = await browser.newContext({
@@ -92,26 +93,13 @@ export async function loginInteractively(
   while (Date.now() - startTime < maxWaitMs) {
     await page.waitForTimeout(1500);
 
-    // Check if the user is logged in
-    const check = await page.evaluate(() => {
-      // If login modal is present, not logged in
-      const hasLoginModal = Boolean(
-        document.querySelector('.hb-modal, .login-modal, [class*="login-dialog"], input[type="tel"]')
-      );
-      if (hasLoginModal) return false;
-
-      // Check if user avatar or creator header is visible and no fullscreen loading
-      const hasUserElement = Boolean(
-        document.querySelector(
-          '.nav-user, .user-avatar, [class*="avatar"], .slide-tab__tab-item.active'
-        )
-      );
-      const hasLoadingOverlay = Boolean(document.querySelector('.hb-loading.is-fullscreen'));
-
-      return hasUserElement && !hasLoadingOverlay;
-    }).catch(() => false);
-
-    if (check) {
+    // Check cookies for heybox_id (definitive proof of login on XiaoHeiHe)
+    const cookies = await context.cookies().catch(() => []);
+    const heyboxIdCookie = cookies.find(
+      (c) => c.name === 'heybox_id' && c.value && c.value !== '0'
+    );
+    if (heyboxIdCookie) {
+      await page.waitForTimeout(1000);
       loggedIn = true;
       break;
     }
@@ -122,8 +110,15 @@ export async function loginInteractively(
     throw new HeyBoxError('登录超时（未在 3 分钟内完成登录），操作已取消。', 'LOGIN_TIMEOUT');
   }
 
-  // Save session state (cookies and localStorage)
-  await context.storageState({ path: sessionFile });
+  // Save session state with explicit user_id for full API compatibility
+  const cookies = await context.cookies();
+  const heyboxId = cookies.find((c) => c.name === 'heybox_id')?.value;
+  const storageData = await context.storageState();
+  const enhancedSession = {
+    user_id: heyboxId || '',
+    ...storageData,
+  };
+  fs.writeFileSync(sessionFile, JSON.stringify(enhancedSession, null, 2), 'utf8');
   await browser.close().catch(() => {});
 
   console.log(`✓ 登录成功！小黑盒登录态已保存至: ${sessionFile}`);
@@ -167,6 +162,7 @@ export async function publishDraftWithBrowser(
   const browser = await chromium.launch({
     channel,
     headless,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
   try {
@@ -185,16 +181,14 @@ export async function publishDraftWithBrowser(
     await page.waitForTimeout(1500);
 
     // 1. Verify Authentication Status
-    const isAuthOk = await page.evaluate(() => {
-      const hasLoginModal = Boolean(
-        document.querySelector('.hb-modal, .login-modal, [class*="login-dialog"], input[type="tel"]')
-      );
-      return !hasLoginModal;
-    });
+    const cookies = await context.cookies().catch(() => []);
+    const hasHeyboxId = cookies.some(
+      (c) => c.name === 'heybox_id' && c.value && c.value !== '0'
+    );
 
-    if (!isAuthOk) {
+    if (!hasHeyboxId) {
       throw new HeyBoxError(
-        '小黑盒登录态已过期，请运行 `md2posts heybox-login` 重新扫码登录！',
+        '小黑盒登录态已过期，请运行 `md2posts login --to heybox` 重新登录！',
         'AUTH_EXPIRED'
       );
     }
@@ -212,7 +206,14 @@ export async function publishDraftWithBrowser(
         const titleEl = document.querySelector(selector) as HTMLElement | null;
         if (titleEl) {
           titleEl.focus();
-          titleEl.innerHTML = `<p>${title}</p>`;
+          const sel = window.getSelection();
+          if (sel) {
+            sel.selectAllChildren(titleEl);
+            document.execCommand('delete');
+            document.execCommand('insertText', false, title);
+          } else {
+            titleEl.innerHTML = `<p>${title}</p>`;
+          }
           titleEl.dispatchEvent(new Event('input', { bubbles: true }));
         }
       },
@@ -231,6 +232,11 @@ export async function publishDraftWithBrowser(
         const bodyEl = document.querySelector(selector) as HTMLElement | null;
         if (bodyEl) {
           bodyEl.focus();
+          const sel = window.getSelection();
+          if (sel) {
+            sel.selectAllChildren(bodyEl);
+            document.execCommand('delete');
+          }
           document.execCommand('insertHTML', false, richHtml);
           bodyEl.dispatchEvent(new Event('input', { bubbles: true }));
         }

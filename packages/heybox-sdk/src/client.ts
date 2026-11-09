@@ -19,9 +19,60 @@ import {
   HeyBoxApiClient,
   resolveHeyBoxSessionFile,
 } from './api-client.js';
-import { HeyBoxError } from './errors.js';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Filters prepared assets down to only those actually referenced by the rendered article body,
+ * plus the optional 16:9 cover.
+ *
+ * Why this matters:
+ * - `localAssetPaths` contains EVERY sibling image of a post bundle, including images that are
+ *   never referenced from the markdown. Uploading them wastes COS quota and pollutes the media library.
+ * - The cover is often cropped FROM one of those sibling images, so uploading both the cover and
+ *   the unreferenced original would push the same picture twice.
+ */
+export function selectReferencedAssets(
+  prepared: HeyBoxPreparedResult
+): Array<{ filename: string; buffer: Buffer; mimetype: string }> {
+  const body = prepared.richHtml || '';
+  const md = prepared.markdown || '';
+
+  const isReferenced = (filename: string, buffer: Buffer): boolean => {
+    // 1) richHtml inlines images as Base64 data URLs, so match on a long unique prefix.
+    const b64Prefix = `data:image/${
+      filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? 'jpeg' : 'png'
+    };base64,${buffer.subarray(0, 96).toString('base64').slice(0, 64)}`;
+    if (body.includes(b64Prefix)) return true;
+
+    // 2) Fallback: match the plain / URI-encoded filename reference in transformed markdown.
+    const base = path.basename(filename);
+    const candidates = new Set([
+      filename,
+      base,
+      encodeURIComponent(base),
+      encodeURIComponent(filename),
+    ]);
+    for (const candidate of candidates) {
+      if (body.includes(`src="${candidate}"`) || body.includes(`src='${candidate}'`)) return true;
+      if (md.includes(`](${candidate})`) || md.includes(`](${candidate} `)) return true;
+    }
+    return false;
+  };
+
+  const result: Array<{ filename: string; buffer: Buffer; mimetype: string }> = [];
+  for (const [filename, buffer] of prepared.assets.entries()) {
+    const isCover = path.basename(filename) === 'cover_16_9.jpg';
+    if (!isCover && !isReferenced(filename, buffer)) continue;
+    result.push({
+      filename,
+      buffer,
+      mimetype:
+        filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? 'image/jpeg' : 'image/png',
+    });
+  }
+  return result;
+}
 
 export class HeyBoxClient {
   private readonly options: HeyBoxClientOptions;
@@ -41,6 +92,7 @@ export class HeyBoxClient {
       browserTimeoutMs: options.browserTimeoutMs,
       assetRoots,
       defaultCoverPath,
+      codeBlockMode: options.codeBlockMode || (options as any).heybox?.codeBlockMode,
       dryRun: Boolean(options.dryRun),
     };
 
@@ -85,6 +137,7 @@ export class HeyBoxClient {
     const prepared = await prepareHeyBoxArticle(article, {
       assetRoots: this.options.assetRoots,
       defaultCoverPath: this.options.defaultCoverPath,
+      codeBlockMode: this.options.codeBlockMode,
     });
 
     // 1. Write transformed Markdown
@@ -169,21 +222,18 @@ export class HeyBoxClient {
     // 1. Primary: Pure TypeScript Native API push (Zero Python, Zero external CLI)
     if (this.apiClient.hasSession()) {
       try {
+        const imageList = selectReferencedAssets(prepared);
+        const skipped = prepared.assets.size - imageList.length;
         console.log(
-          `[HeyBox] 正在通过原生 API 直接提交草稿箱 (上传 ${prepared.assets.size} 项素材)...`
+          `[HeyBox] 正在通过原生 API 直接提交草稿箱 (上传 ${imageList.length} 项素材` +
+            (skipped > 0 ? `，已跳过 ${skipped} 项未引用素材` : '') +
+            ') ...'
         );
-        const imageList = Array.from(prepared.assets.entries()).map(([filename, buffer]) => ({
-          filename,
-          buffer,
-          mimetype:
-            filename.endsWith('.jpg') || filename.endsWith('.jpeg')
-              ? 'image/jpeg'
-              : 'image/png',
-        }));
 
         const draftRes = await this.apiClient.createArticleDraft({
           title: prepared.title,
           markdown: prepared.markdown,
+          richHtml: prepared.richHtml,
           images: imageList,
           communities: prepared.metadata.community ? [prepared.metadata.community] : [],
           hashtags: prepared.metadata.hashtags || [],
@@ -315,8 +365,3 @@ export class HeyBoxClient {
     };
   }
 }
-
-/**
- * Backward compatibility alias for HeyBoxClient
- */
-export const HeyBoxPublisher = HeyBoxClient;

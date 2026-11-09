@@ -22,7 +22,16 @@
 | Platform | Core Highlights | Pain Points Solved |
 |---|---|---|
 | **WeChat MP** (`wechat`) | 28 built-in themes, WeChat-safe section lists, line-by-line highlighted code blocks, external links to footnotes, adaptive WebP compression | Eliminates WeChat editor layout breakage, line-break losses, and >1MB image limit errors |
-| **XiaoHeiHe** (`heybox`) | **Code blocks & tables auto-rendered to dark PNG card images**, 16:9 banner auto-crop, ProseMirror H2/H3 alignment, direct draft box publishing | Solves mobile app code truncation and line wrapping breakage |
+| **XiaoHeiHe** (`heybox`) | **Hybrid code rendering** (short commands become copy-friendly native terminal blocks, long source files become dark PNG cards), tables rendered as cards, cover inserted at body top, ProseMirror H2/H3 alignment, direct draft publishing | Solves mobile code truncation, unreadable squeezed screenshots, and duplicated images |
+
+---
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Package responsibilities, dependency graph, data flows, and the design decisions behind platform quirks |
+| [docs/BUILD.md](docs/BUILD.md) | Environment, build/test commands, coding & dependency rules, and the 5-step verification workflow |
 
 ---
 
@@ -118,15 +127,18 @@ bash systemd/uninstall-systemd.sh [--purge]
 ```text
 md2posts/
 ├── packages/
-│   ├── wechat-sdk/     # WeChat Official Account API Client (zero external dependencies)
-│   ├── heybox-sdk/     # XiaoHeiHe SDK (code card generator, 16:9 banner, publisher)
-│   ├── renderer/       # Universal Markdown renderer & AST preprocessor (28 themes)
-│   ├── sources/        # Static blog filesystem adapter (Hugo/Hexo, composite SHA-256)
-│   ├── sync-core/      # Unified multi-platform sync orchestration & state store
+│   ├── wechat-sdk/     # WeChat Official Account API client (zero runtime dependencies)
+│   ├── heybox-sdk/     # XiaoHeiHe SDK: transformer, code/table cards, cover, publisher
+│   ├── renderer/       # Markdown renderer & AST preprocessor (28 themes)
+│   ├── sources/        # Blog scanning, composite SHA-256, shared asset resolver
+│   ├── sync-core/      # Sync orchestration, state store, image cache, notifier
 │   └── cli/            # CLI entry point & terminal presentation
-├── systemd/            # Linux systemd automated service suite
+├── docs/               # Architecture and build/development docs
+├── systemd/            # Linux systemd service suite
 └── config.yaml.example # Configuration template
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the dependency graph and per-package boundaries.
 
 ---
 

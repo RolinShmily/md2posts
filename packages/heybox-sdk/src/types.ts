@@ -22,8 +22,6 @@ export interface HeyBoxArticleInput {
 
 export interface HeyBoxPreparedResult {
   article: HeyBoxArticleInput;
-  /** Backward compatibility alias */
-  post: HeyBoxArticleInput;
   title: string;
   markdown: string;
   richHtml: string;
@@ -46,9 +44,12 @@ export interface HeyBoxPublishResult {
   message: string;
 }
 
+export type HeyBoxCodeBlockMode = 'auto' | 'terminal' | 'image';
+
 export interface HeyBoxPrepareOptions {
   assetRoots?: string[];
   defaultCoverPath?: string;
+  codeBlockMode?: HeyBoxCodeBlockMode;
 }
 
 export interface HeyBoxPublishOptions {
@@ -67,6 +68,7 @@ export interface HeyBoxClientOptions {
   browserTimeoutMs?: number;
   assetRoots?: string[];
   defaultCoverPath?: string;
+  codeBlockMode?: HeyBoxCodeBlockMode;
   dryRun?: boolean;
   /** Optional nested config support for AppConfig */
   source?: { assetRoots?: string[] };

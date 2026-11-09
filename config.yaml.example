@@ -70,8 +70,9 @@ sync:
   maxPerRun: 5
   # 定时 sync 时是否自动将已修改的老文章也重新推送到草稿箱（默认 false: sync 只推新文章，老文章修改后由人工通过 push 选择推送）
   syncUpdated: false
-  # 兜底封面图路径（当文章自身无封面且正文无图片时使用，留空则自动尝试读取 {repoRoot}/public/og/og.png）
-  defaultCover: ""
+  # 唯一兜底封面：仅当文章 frontmatter 没有 image 时使用（支持 {repoRoot} 占位符）。
+  # 留空则这些文章会因缺少封面而同步失败，不会再去猜正文首图。
+  defaultCover: "{repoRoot}/public/og/og.png"
   # 是否自动下载 jsDelivr 等外链图片转传至微信（防防盗链过滤）
   downloadRemoteImages: true
   # 是否开启草稿评论功能 (0 关闭, 1 开启)
@@ -91,6 +92,12 @@ heybox:
   cliPath: "xiaoheihe"
   # 浏览器执行通道 (chrome 或 msedge，用于无头推流或本地扫码)
   browserChannel: "chrome"
+  # 代码块渲染策略 (auto | terminal | image)
+  #   auto     - 默认：短命令/配置片段(<=6行或 bash/pwsh/config 等)转原生终端块(可长按复制)，
+  #              长程序源码(>6行) 转 2x Retina 深色代码卡片图
+  #   terminal - 全部转原生终端块（零图片、100% 可复制，适合纯命令教程类文章）
+  #   image    - 全部转高清代码卡片图（适合需要语法高亮的复杂长源码）
+  codeBlockMode: "auto"
 
 notify:
   # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON，也可通过 MD2POSTS_WEBHOOK_URL 环境变量覆盖）
