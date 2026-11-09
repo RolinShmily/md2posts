@@ -12,6 +12,7 @@ import {
   SyncPipeline,
   parseArticleSelection,
   CheckPostItem,
+  StateStore,
 } from '@md2posts/sync-core';
 
 function printBanner() {
@@ -23,17 +24,17 @@ function printBanner() {
 
 function printUsage() {
   printBanner();
-  console.log(`用法:
-  md2posts <command> [options]
+  console.log(`用法（在仓库根目录执行，可先运行 pnpm build）:
+  pnpm cli <command> [options]
 
 命令:
   diagnose                微信 API 与出口 IP 白名单诊断（只读，不修改文件）
   check                   离线扫描博客：报告【新增待同步】与【已修改可手动推】文章（零微信请求）
-  baseline                将当前已发布文章标记为基线，跳过历史文章自动推送
+  baseline                将当前已发布文章标记为基线（--status 查看位置/篇数，--import <file> 从其他机器导入）
   preview <slug>          离线渲染指定文章为独立页面（支持 --to wechat 或 --to heybox）
   push [slug1 slug2 ...]  推送文章到草稿箱（支持 --to wechat / heybox / all，不传 slug 进入勾选列表）
   sync                    自动增量同步【新文章】到草稿箱（默认忽略老文章修改，受 maxPerRun 限制）
-  login                   登录并保存平台凭据 (例如: md2posts login --to heybox)
+  login                   登录并保存平台凭据 (例如: pnpm cli login --to heybox)
   themes                  列出内置的 28 套精美主题
 
 通用选项:
@@ -49,6 +50,7 @@ function printUsage() {
   -i, --select            进入交互式文章选择推送模式
   --filter <keyword>      交互式选择时按关键词过滤文章 (匹配 slug 或标题)
   --include-updated       在 sync 时破例把修改过的历史文章也纳入自动推送
+  --initial-push          本机尚无基线时，明确允许把当前待推文章当作首次推送
   --dry-run               开启演练模式，写接口不发真实请求
   --force                 强制新建草稿（跳过 update 原草稿尝试）
   -o, --output <path>     指定 preview 输出文件或目录路径
@@ -146,7 +148,7 @@ async function runCheck(configPath?: string, cliValues?: any) {
   }
 
   if (updatedItems.length > 0) {
-    console.log('✏️  检测到内容修改的历史文章 (sync 默认不推，如需推送请运行 `md2posts push`):');
+    console.log('✏️  检测到内容修改的历史文章 (sync 默认不推，如需推送请运行 `pnpm cli push`):');
     for (const item of updatedItems) {
       console.log(`   【已改】 [${item.id}] ${item.title}`);
     }
@@ -166,11 +168,36 @@ async function runBaseline(
     onlySlugs?: string[];
     pullRemoteDrafts?: boolean;
     forcePull?: boolean;
+    status?: boolean;
+    importFrom?: string;
   } = {},
   cliValues?: any
 ) {
   printBanner();
   const config = loadConfigWithOverrides(configPath, cliValues);
+
+  // Read-only baseline inspection: no git pull, no platform calls.
+  if (options.status) {
+    printBaselineStatus(config.sync.stateFile);
+    return;
+  }
+
+  // Adopt another machine's baseline (merge, never overwrite local records).
+  if (options.importFrom) {
+    const src = path.resolve(options.importFrom);
+    if (!fs.existsSync(src)) {
+      throw new Error(`导入失败：找不到文件 ${src}`);
+    }
+    const store = new StateStore(config.sync.stateFile);
+    const { added, skipped } = store.importFrom(JSON.parse(fs.readFileSync(src, 'utf8')));
+    console.log(`✓ 已从 ${src} 导入基线`);
+    console.log(`  本机状态文件: ${config.sync.stateFile}`);
+    console.log(`  新增记录: ${added} 篇   已存在跳过: ${skipped} 篇`);
+    const stats = store.getStats();
+    console.log(`  当前共记录 ${stats.posts} 篇（baselined ${stats.baselined} / synced ${stats.synced}）\n`);
+    return;
+  }
+
   const pipeline = new SyncPipeline(config);
 
   if (options.pullRemoteDrafts) {
@@ -380,7 +407,8 @@ async function runPush(
     return;
   }
 
-  const targetPlatform = (cliValues?.to || 'wechat').toLowerCase();
+  // 与 sync 保持一致：命令行 --to > config.yaml 的 sync.target > wechat 默认值
+  const targetPlatform = (cliValues?.to || config.sync.target || 'wechat').toLowerCase();
   const targetDesc =
     targetPlatform === 'heybox' ? '小黑盒' : targetPlatform === 'all' ? '微信 + 小黑盒' : '微信草稿箱';
 
@@ -434,6 +462,48 @@ async function runPush(
 }
 
 /**
+ * Full baseline report for `pnpm cli baseline --status`.
+ */
+function printBaselineStatus(stateFile: string): void {
+  const exists = fs.existsSync(stateFile);
+  const store = new StateStore(stateFile);
+  const stats = store.getStats();
+
+  console.log('📌 同步基线（baseline）状态\n');
+  console.log(`  状态文件: ${stateFile}`);
+  console.log(`  文件存在: ${exists ? '是' : '否（本机尚未建立基线）'}`);
+  console.log(`  已记录文章: ${stats.posts} 篇  (baselined ${stats.baselined} / synced ${stats.synced})`);
+  console.log(`  基线建立于: ${stats.baselineCreatedAt || '(未记录)'}`);
+  console.log(`  最近拉取博客: ${stats.lastGitPullAt || '(未记录)'}`);
+  console.log(`  图片缓存: ${stats.images} 条    封面缓存: ${stats.covers} 条`);
+  console.log('');
+  console.log('  说明: 该文件是【机器本地】的，不随 Git 仓库同步。');
+  console.log('        换机器 / VPS 时可用 `pnpm cli baseline --import <state.json>` 搬运，');
+  console.log('        或在新机器上直接运行 `pnpm cli baseline` 重新建立。\n');
+}
+
+/**
+ * Prints where the sync baseline lives and what it currently knows.
+ * The state file is machine-local, which is the usual source of "why did a fresh VPS
+ * push articles that were already published elsewhere?".
+ */
+function printBaselineInfo(stateFile: string): void {
+  const store = new StateStore(stateFile);
+  const recorded = store.countPosts();
+  const createdAt = store.getBaselineCreatedAt();
+
+  if (recorded === 0) {
+    console.log(`基线文件: ${stateFile}  (空 — 本机从未建立过基线)`);
+    console.log('  ⚠️  空基线时 sync 会中止；先运行 `pnpm cli baseline` 或复制原机器的 state.json。');
+    return;
+  }
+
+  const baselineDesc = createdAt ? `建立于 ${createdAt}` : '建立时间未记录';
+  console.log(`基线文件: ${stateFile}`);
+  console.log(`  已记录文章: ${recorded} 篇 (${baselineDesc})`);
+}
+
+/**
  * Prints failures grouped by identical error message.
  * A single misconfiguration (e.g. invalid AppID) otherwise repeats the same 200-char
  * error for every article and buries the actionable part in the journal.
@@ -466,7 +536,13 @@ function printGroupedFailures(failed: Array<{ id: string; error: string }>): voi
   }
 }
 
-async function runSync(configPath?: string, dryRun = false, includeUpdated = false, cliValues?: any) {
+async function runSync(
+  configPath?: string,
+  dryRun = false,
+  includeUpdated = false,
+  cliValues?: any
+) {
+  const allowInitialPush = Boolean(cliValues?.['initial-push']);
   printBanner();
   const config = loadConfigWithOverrides(configPath, cliValues);
   const targetPlatform = (cliValues?.to || config.sync.target || 'wechat').toLowerCase() as
@@ -485,12 +561,14 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
   console.log(
     `开始执行${dryRun ? '【模拟演练】' : ''}自动同步 (目标: ${targetPlatform}, 策略: ${modeDesc}, 单次上限: ${config.sync.maxPerRun} 篇)...`
   );
+  printBaselineInfo(config.sync.stateFile);
 
   const report = await pipeline.sync({
     to: targetPlatform,
     includeUpdated: includeUpdated || undefined,
     forcePull: cliValues?.pull,
     dryRun,
+    allowInitialPush,
   });
 
   console.log('\n📊 同步完成报告:');
@@ -499,7 +577,7 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
   console.log(`  - 失败文章:         ${report.failed.length} 篇`);
   if (report.skippedUpdatedCount > 0) {
     console.log(
-      `  - 已跳过修改的老文章: ${report.skippedUpdatedCount} 篇 (默认不自动更新老文章，如需推送请运行 md2posts push)`
+      `  - 已跳过修改的老文章: ${report.skippedUpdatedCount} 篇 (默认不自动更新老文章，如需推送请运行 pnpm cli push)`
     );
   }
   if (report.skippedDueToLimit > 0) {
@@ -537,11 +615,11 @@ async function runLogin(configPath?: string, cliValues?: any) {
     console.log('正在启动小黑盒浏览器交互式扫码登录...\n');
     const sessionFile = await client.login();
     console.log(`\n✓ 小黑盒登录态已成功保存至: ${sessionFile}`);
-    console.log('后续执行 md2posts push --to heybox 即可全自动直接推入小黑盒草稿箱！\n');
+    console.log('后续执行 pnpm cli push --to heybox 即可全自动直接推入小黑盒草稿箱！\n');
     return;
   }
 
-  console.log(`目前仅支持小黑盒登录凭据捕获: md2posts login --to heybox\n`);
+  console.log(`目前仅支持小黑盒登录凭据捕获: pnpm cli login --to heybox\n`);
 }
 
 function runThemes() {
@@ -582,6 +660,9 @@ async function main() {
       asc: { type: 'boolean' },
       desc: { type: 'boolean' },
       'include-updated': { type: 'boolean' },
+      'initial-push': { type: 'boolean' },
+      status: { type: 'boolean' },
+      import: { type: 'string' },
       remote: { type: 'boolean' },
       except: { type: 'string' },
       before: { type: 'string' },
@@ -617,6 +698,8 @@ async function main() {
           onlySlugs: parsed.positionals.length > 0 ? parsed.positionals : undefined,
           pullRemoteDrafts: parsed.values.remote,
           forcePull: parsed.values.pull,
+          status: parsed.values.status,
+          importFrom: parsed.values.import,
         },
         parsed.values
       );
@@ -625,7 +708,7 @@ async function main() {
     case 'preview': {
       const slug = parsed.positionals[0];
       if (!slug) {
-        console.error('错误: 请指定要预览的文章 slug，例如: md2posts preview 45-immortalwrt-1\n');
+        console.error('错误: 请指定要预览的文章 slug，例如: pnpm cli preview 45-immortalwrt-1\n');
         process.exit(1);
       }
       await runPreview(slug, configPath, parsed.values.output, parsed.values.theme, parsed.values);

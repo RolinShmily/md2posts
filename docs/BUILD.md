@@ -29,7 +29,7 @@ pnpm install          # 安装依赖（预置 .npmrc，见「依赖策略」）
 pnpm build            # 全量编译（拓扑序，tsc -> dist/）
 pnpm test             # 全量测试（逐包执行）
 pnpm typecheck        # 仅类型检查，不产出文件
-pnpm cli <command>    # 运行编译后的 CLI
+pnpm cli <command>    # 运行编译后的 CLI（仓库根目录，唯一入口）
 ```
 
 ### 2.2 单包操作
@@ -70,6 +70,38 @@ packages/<pkg>/
 - 新增包：建目录 → 加 `tsconfig.json`（复制现有包）→ 在 `pnpm-workspace.yaml` 的 `packages/*` 下自动纳入 → 在依赖方 `package.json` 写 `workspace:*`。
 
 ---
+
+## 3.5 同步基线（baseline）
+
+「基线」就是 `sync.stateFile`（默认 `./state.json`，相对 `config.yaml` 所在目录解析）。它记录每篇文章的 `contentHash`、平台草稿 ID 与图片缓存，用来回答**哪些文章已经推送过**。
+
+要点：
+
+- **基线是机器本地的，不随仓库同步。** 新克隆的 VPS 上它是空的，此时所有文章都会被判为“新增”。
+- 空基线 + 存在待推文章时，`sync` **会中止**并提示，避免把已在别处发布过的文章再推一遍：
+
+  ```text
+  [Baseline] 本机尚无同步基线，但检测到 61 篇待推送文章，已中止以避免误推。
+    状态文件: /path/to/state.json
+    1) 若这些文章此前已在别处推送过：先建立基线 —— `pnpm cli baseline`，或把原机器的 state.json 复制过来；
+    2) 若这是一批确实需要推送的新文章：加 `--initial-push` 明确同意；
+    3) 只想先看看会推什么：`pnpm cli check`。
+  ```
+
+- `sync` 启动时会打印基线位置与已记录篇数；`pnpm cli check` 可用于零写入地预览会推什么。
+- 多机同步（例如本地 + VPS）：把一台机器上的 `state.json` 复制到另一台的同一路径，即可共享“已推送”认知。
+- `pnpm cli baseline` 会把当前所有已发布文章标记为“已推送过”，**不调用任何平台接口**；`baseline --remote` 还会额外从微信草稿箱/已发表列表回填草稿 ID。
+
+基线相关命令一览：
+
+```bash
+pnpm cli baseline                       # 就地建立基线（当前所有已发布文章 → 已推过）
+pnpm cli baseline --status              # 查看基线位置/篇数/建立时间（只读，不拉取、不联网）
+pnpm cli baseline --import state.json   # 从其他机器搬运基线（合并，不覆盖本机已有记录）
+pnpm cli baseline --remote              # 额外从微信草稿箱/已发表列表回填草稿 ID
+pnpm cli baseline <slug...>             # 只把指定文章标记为已推过
+```
+
 
 ## 4. 编码规范
 
@@ -240,11 +272,12 @@ pnpm cli push <slug> --to heybox --force
 |---|---|---|
 | `Fontconfig warning: invalid attribute 'xsi:nil'` 大量刷屏 | 发行版 fontconfig 新语法不被 `sharp` 内置库识别 | 无害，可忽略；如需静音，移除对应的 `48-guessfamily.conf` / `48-spacing.conf` / `49-sansserif.conf` |
 | `Cannot find module '.../dist/index.js'` | 跨包引用了尚未编译的产物 | 先 `pnpm build`（拓扑序），再跑测试 |
+| `[Baseline] 本机尚无同步基线…已中止` | 新机器（如 VPS）的 `state.json` 为空，文章会被当成新增 | 运行 `pnpm cli baseline`、复制原机器的 `state.json`，或确属首次推送时加 `--initial-push` |
 | 小黑盒 `发帖频率过快:10006` | 短时间多次写操作 | 等待 45–60 秒，不要连续重试 |
 | `[Preflight] 目标平台「X」凭据未就绪 … 本次已跳过该平台` | 只有该平台不可用（`--to all` 时会降级为另一平台） | 补该平台凭据即可；单平台目标（`--to wechat`）缺凭据才会中止 |
 | `[Preflight] … 已中止本次运行` | 请求的所有平台都不可用 | 同上，至少修好一个平台 |
-| `[Config] 环境变量 WECHAT_APPID 与 config.yaml 不一致` | `WECHAT_APPID`/`WECHAT_SECRET` 覆盖了配置文件 | 检查 `/etc/md2posts/md2posts.env` 与 shell 环境，这通常就是 `40013` 的根因 |
-| 微信 `40013 invalid appid` | AppID 与当前环境不匹配 | 校验 AppID 来源（config 与环境变量优先级：`WECHAT_APPID` 覆盖 config） |
+| `[Config] 已忽略环境变量 WECHAT_APPID` | 环境变量与 config.yaml 同时存在且不同（配置优先，已忽略环境变量） | 想用环境变量就清空 `config.yaml` 的 `wechat.appId`；否则可以删掉该环境变量 |
+| 微信 `40013 invalid appid` | `wechat.appId` 与目标公众号不匹配 | 核对 `config.yaml` 的 `wechat.appId`；注意环境变量仅在 config 留空时生效 |
 | 微信 `40007 invalid media_id` | 旧草稿/封面素材失效 | 加 `--force` 新建草稿 |
 | 小黑盒草稿"少了一半" | 曾把 HTML 切成多个块提交，平台只取 Block[0] | 确保 `Block[0]` 是整篇 HTML（已在实现中固定） |
 | 同一张图出现两次 | `<img>` 带了 `src` 属性 | 只输出 `data-original`（已固定，见 `toXiaoHeiHeImgTag`） |
@@ -262,4 +295,10 @@ journalctl -u md2posts-sync.service -n 50 -f
 bash systemd/uninstall-systemd.sh [--purge]
 ```
 
-服务单元关键点：`WorkingDirectory` 为仓库根、`flock -n /tmp/md2posts.lock` 防并发、`EnvironmentFile` 读取 `/etc/md2posts/md2posts.env` 与仓库 `.env` 注入凭据（**凭据不入库**）。
+服务单元关键点：`WorkingDirectory` 为仓库根、`flock -n /tmp/md2posts.lock` 防并发、通过 `-c config.yaml` 读取配置。
+
+**凭据与优先级**：
+
+- 凭据只写在 `config.yaml`（已被 `.gitignore` 忽略，不入库），安装脚本**不会**创建任何 env 文件。
+- `config.yaml` 优先级最高；`WECHAT_APPID` / `WECHAT_SECRET` / `MD2POSTS_WEBHOOK_URL` 仅在对应字段留空时作为兜底。
+- 旧版本创建的 `/etc/md2posts/md2posts.env` 已不再被读取，可安全删除。

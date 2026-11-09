@@ -99,7 +99,7 @@ export function formatWeChatErrorMessage(
     case 40001:
       return `${actionPrefix}AppSecret 错误或 access_token 无效。请检查环境变量 WECHAT_SECRET 是否正确。`;
     case 40013:
-      return `${actionPrefix}AppID 无效。请检查环境变量 WECHAT_APPID 是否正确。`;
+      return `${actionPrefix}AppID 无效。请检查 config.yaml 的 wechat.appId（环境变量 WECHAT_APPID 仅作兜底）。`;
     case 40164:
       return `${actionPrefix}当前服务器出口 IP (${ip || '未知'}) 未加入微信公众号 IP 白名单。请前往「微信公众平台 -> 开发 -> 基本配置 -> IP白名单」添加该 IP。`;
     case 42001:

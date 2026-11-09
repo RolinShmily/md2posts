@@ -305,3 +305,161 @@ test('pipeline keeps WeChat working when HeyBox session is unavailable', async (
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('config.yaml wins over environment variables for credentials and webhook', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-envperf-'));
+  const cfgPath = path.join(tmpDir, 'config.yaml');
+  fs.writeFileSync(
+    cfgPath,
+    [
+      'source:',
+      '  type: fs',
+      '  gitPull: false',
+      'wechat:',
+      '  appId: "wx1111111111111111"',
+      '  appSecret: "config-secret-value"',
+      'notify:',
+      '  webhookUrl: "https://example.com/from-config"',
+      '',
+    ].join('\n')
+  );
+
+  const saved = {
+    appId: process.env.WECHAT_APPID,
+    secret: process.env.WECHAT_SECRET,
+    hook: process.env.MD2POSTS_WEBHOOK_URL,
+  };
+  process.env.WECHAT_APPID = 'wx9999999999999999';
+  process.env.WECHAT_SECRET = 'env-secret-value';
+  process.env.MD2POSTS_WEBHOOK_URL = 'https://example.com/from-env';
+
+  try {
+    const cfg = loadConfig(cfgPath);
+    assert.equal(cfg.wechat.appId, 'wx1111111111111111', 'config.yaml AppID must win');
+    assert.equal(cfg.wechat.appSecret, 'config-secret-value', 'config.yaml secret must win');
+    assert.equal(cfg.notify?.webhookUrl, 'https://example.com/from-config');
+
+    // Empty config value falls back to the environment.
+    fs.writeFileSync(
+      cfgPath,
+      ['source:', '  type: fs', 'wechat:', '  appId: ""', '  appSecret: ""', ''].join('\n')
+    );
+    const fallback = loadConfig(cfgPath);
+    assert.equal(fallback.wechat.appId, 'wx9999999999999999');
+    assert.equal(fallback.wechat.appSecret, 'env-secret-value');
+  } finally {
+    const restore = (key: string, value?: string) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    restore('WECHAT_APPID', saved.appId);
+    restore('WECHAT_SECRET', saved.secret);
+    restore('MD2POSTS_WEBHOOK_URL', saved.hook);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('sync refuses to push when this machine has no baseline', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-baseline-guard-'));
+  const postDir = path.join(tmpDir, 'post-a');
+  fs.mkdirSync(postDir);
+
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  fs.writeFileSync(path.join(postDir, 'cover.png'), png);
+  fs.writeFileSync(
+    path.join(postDir, 'index.md'),
+    '---\ntitle: "基线守卫"\npublished: 2026-05-01\nimage: ./cover.png\ndraft: false\n---\n\n正文。\n'
+  );
+
+  try {
+    const cfg = loadConfig();
+    cfg.source.postsRoot = tmpDir;
+    cfg.source.gitPull = false;
+    cfg.source.assetRoots = ['{postDir}'];
+    cfg.sync.stateFile = path.join(tmpDir, 'state.json');
+    cfg.sync.defaultCover = path.join(postDir, 'cover.png');
+    cfg.wechat = { appId: 'wx1234567890abcdef', appSecret: 'test_secret' };
+
+    const makePipeline = () =>
+      new SyncPipeline(
+        cfg,
+        new WeChatClient({ appId: 'wx1234567890abcdef', appSecret: 'test_secret', dryRun: true })
+      );
+
+    // Empty state + pending article -> must abort with actionable guidance.
+    await assert.rejects(
+      () => makePipeline().sync({ to: 'wechat' }),
+      /尚无同步基线/,
+      'a fresh machine must not silently push articles already published elsewhere'
+    );
+
+    // Explicit opt-in is allowed.
+    const opted = await makePipeline().sync({ to: 'wechat', allowInitialPush: true, dryRun: true });
+    assert.equal(opted.failed.length, 0);
+
+    // Dry runs only warn.
+    const dry = await makePipeline().sync({ to: 'wechat', dryRun: true });
+    assert.equal(dry.failed.length, 0);
+
+    // After a baseline exists, normal sync is allowed without the flag.
+    const withBaseline = makePipeline();
+    await withBaseline.baseline();
+    const after = await withBaseline.sync({ to: 'wechat', dryRun: true });
+    assert.equal(after.failed.length, 0);
+    assert.equal(after.pushed.length, 0, 'baselined article must not be re-pushed');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('StateStore.importFrom merges another machine baseline without overwriting', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-import-'));
+  const stateFile = path.join(tmpDir, 'state.json');
+
+  try {
+    const store = new StateStore(stateFile);
+    store.setPost('existing', {
+      contentHash: 'local-hash',
+      title: '本地已有',
+      status: 'synced',
+      pushedAt: '2026-06-01T00:00:00.000Z',
+      draftMediaId: 'local-media',
+    });
+    store.save();
+
+    const incoming = {
+      version: 1,
+      baselineCreatedAt: '2026-01-01T00:00:00.000Z',
+      posts: {
+        // Must NOT overwrite the local record.
+        existing: { contentHash: 'imported-hash', title: '导入的', status: 'baselined', pushedAt: '2026-01-01T00:00:00.000Z' },
+        fresh: { contentHash: 'fresh-hash', title: '新导入', status: 'baselined', pushedAt: '2026-01-02T00:00:00.000Z' },
+      },
+      images: {},
+      covers: {},
+    };
+
+    const result = store.importFrom(incoming);
+    assert.equal(result.added, 1);
+    assert.equal(result.skipped, 1);
+
+    const reloaded = new StateStore(stateFile);
+    assert.equal(reloaded.getPost('existing')?.contentHash, 'local-hash', 'local record wins');
+    assert.equal(reloaded.getPost('existing')?.draftMediaId, 'local-media');
+    assert.equal(reloaded.getPost('fresh')?.contentHash, 'fresh-hash');
+    assert.equal(reloaded.getBaselineCreatedAt(), '2026-01-01T00:00:00.000Z');
+
+    // Importing twice is idempotent.
+    const again = reloaded.importFrom(incoming);
+    assert.equal(again.added, 0);
+    assert.equal(again.skipped, 2);
+
+    // Invalid payload is rejected with an actionable message.
+    assert.throws(() => reloaded.importFrom({ nope: true }), /不是有效的 state\.json/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

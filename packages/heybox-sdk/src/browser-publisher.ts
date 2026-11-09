@@ -150,7 +150,7 @@ export async function publishDraftWithBrowser(
 
   if (!hasSavedSession(sessionFile)) {
     throw new HeyBoxError(
-      `未找到小黑盒登录凭据，请先执行登录命令 (md2posts heybox-login)！`,
+      '未找到小黑盒登录凭据，请先执行登录命令 `pnpm cli login --to heybox`！',
       'NO_SESSION'
     );
   }
@@ -188,7 +188,7 @@ export async function publishDraftWithBrowser(
 
     if (!hasHeyboxId) {
       throw new HeyBoxError(
-        '小黑盒登录态已过期，请运行 `md2posts login --to heybox` 重新登录！',
+        '小黑盒登录态已过期，请运行 `pnpm cli login --to heybox` 重新登录！',
         'AUTH_EXPIRED'
       );
     }

@@ -200,6 +200,92 @@ export class StateStore {
     return this.data.posts;
   }
 
+  /** Number of articles this state file has ever recorded (baseline + synced). */
+  public countPosts(): number {
+    return Object.keys(this.data.posts).length;
+  }
+
+  /** True when no article has been recorded yet (fresh clone / new machine). */
+  public isEmpty(): boolean {
+    return this.countPosts() === 0;
+  }
+
+  /** When the baseline was first established, if ever. */
+  public getBaselineCreatedAt(): string | undefined {
+    return this.data.baselineCreatedAt;
+  }
+
+  /** Counts by record status plus cache sizes, for CLI inspection. */
+  public getStats(): {
+    posts: number;
+    baselined: number;
+    synced: number;
+    images: number;
+    covers: number;
+    lastGitPullAt?: string;
+    baselineCreatedAt?: string;
+  } {
+    const entries = Object.values(this.data.posts);
+    return {
+      posts: entries.length,
+      baselined: entries.filter((e) => e.status === 'baselined').length,
+      synced: entries.filter((e) => e.status === 'synced').length,
+      images: Object.keys(this.data.images).length,
+      covers: Object.keys(this.data.covers).length,
+      lastGitPullAt: this.data.lastGitPullAt,
+      baselineCreatedAt: this.data.baselineCreatedAt,
+    };
+  }
+
+  /**
+   * Merges another machine's state into this one.
+   *
+   * Only fills in articles this machine has never seen: an existing record is authoritative
+   * locally (its contentHash may be newer), so imports never overwrite or downgrade it.
+   */
+  public importFrom(source: unknown): { added: number; skipped: number } {
+    const data = source as Partial<SyncStateData> | null;
+    if (!data || typeof data !== 'object' || typeof data.posts !== 'object' || !data.posts) {
+      throw new Error('[StateStore] 导入失败：文件内容不是有效的 state.json（缺少 posts 字段）');
+    }
+
+    const incoming = data.posts as Record<string, PostSyncState>;
+    let added = 0;
+    let skipped = 0;
+
+    for (const [id, entry] of Object.entries(incoming)) {
+      if (!entry || typeof entry !== 'object' || typeof entry.contentHash !== 'string') {
+        skipped++;
+        continue;
+      }
+      if (this.data.posts[id]) {
+        skipped++;
+        continue;
+      }
+      this.data.posts[id] = {
+        contentHash: entry.contentHash,
+        title: String(entry.title || id),
+        status: entry.status === 'synced' ? 'synced' : 'baselined',
+        pushedAt: String(entry.pushedAt || new Date().toISOString()),
+        ...(entry.draftMediaId ? { draftMediaId: String(entry.draftMediaId) } : {}),
+        ...(entry.heyboxDraftId ? { heyboxDraftId: String(entry.heyboxDraftId) } : {}),
+        ...(entry.heyboxSyncedAt ? { heyboxSyncedAt: String(entry.heyboxSyncedAt) } : {}),
+      };
+      added++;
+    }
+
+    // Keep the earliest baseline timestamp so the "baseline existed since" stays meaningful.
+    if (data.baselineCreatedAt) {
+      const incomingDate = String(data.baselineCreatedAt);
+      if (!this.data.baselineCreatedAt || incomingDate < this.data.baselineCreatedAt) {
+        this.data.baselineCreatedAt = incomingDate;
+      }
+    }
+
+    this.save();
+    return { added, skipped };
+  }
+
   public save(): void {
     try {
       const dir = path.dirname(this.filePath);

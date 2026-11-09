@@ -102,7 +102,7 @@ export class WeChatClient {
         title: '公众号开发凭据检查',
         ok: false,
         message: '未提供有效的 AppID 或 AppSecret',
-        remediation: '请检查环境变量 WECHAT_APPID 与 WECHAT_SECRET 是否已配置。',
+        remediation: '请检查 config.yaml 的 wechat.appId / wechat.appSecret（环境变量仅作兜底）。',
       });
       return { ok: false, canUseDraftApi: false, ipWhitelistOk: false, steps };
     }

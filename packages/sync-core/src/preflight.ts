@@ -29,9 +29,9 @@ function isPlaceholder(value: string): boolean {
 }
 
 const ENV_HINT =
-  '请在 config.yaml 的 wechat.appId / wechat.appSecret 填写，或通过环境变量 ' +
-  'WECHAT_APPID / WECHAT_SECRET 注入（systemd 场景可写入 /etc/md2posts/md2posts.env 后 ' +
-  'systemctl restart md2posts-sync.service）';
+  '请在 config.yaml 的 wechat.appId / wechat.appSecret 填写后重启服务' +
+  '（systemctl restart md2posts-sync.timer）。也可用环境变量 WECHAT_APPID / WECHAT_SECRET ' +
+  '作为兜底，但 config.yaml 优先级更高。';
 
 /**
  * Validates WeChat Official Account credentials before any network call.
@@ -72,8 +72,8 @@ export function checkHeyBoxSession(hasSession: boolean, sessionFile?: string): C
     ready: false,
     errors: [
       `未找到小黑盒登录凭据（期望位置: ${where}）。` +
-        '有桌面环境的机器上运行 `md2posts login --to heybox` 扫码，然后把 session.json 复制到该路径；' +
-        '或运行 `md2posts login --to heybox` 完成浏览器登录。',
+        '有桌面环境的机器上运行 `pnpm cli login --to heybox` 扫码，然后把 session.json 复制到该路径；' +
+        '或直接在该环境运行同一条命令完成浏览器登录。',
     ],
     warnings: [],
   };

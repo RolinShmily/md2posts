@@ -55,17 +55,23 @@ cp config.yaml.example config.yaml
 nano config.yaml
 ```
 
-> **XiaoHeiHe Authentication** (local scan or copy to VPS):
-> ```bash
-> # Log in once via browser QR scan to store your persistent session
-> xiaoheihe login --browser chrome
-> ```
+**Where credentials live**: credentials belong in `config.yaml` (already `.gitignore`d, never committed).
+Environment variables `WECHAT_APPID` / `WECHAT_SECRET` are only a fallback when the corresponding
+field is empty — **the config file always wins**, and the installer never generates an env file.
+
+```bash
+# XiaoHeiHe: scan once on a machine with a display; the session is stored at
+# heybox.sessionFile (default: .cache/heybox-session.json)
+pnpm cli login --to heybox
+```
 
 ---
 
 ## Common CLI Commands
 
-All commands can be invoked via `pnpm cli <command>`:
+There is no global command: the single entry point is `pnpm cli <command>` run from the repository
+root (after `pnpm install && pnpm build`). The systemd timer invokes the same CLI code via an absolute
+node path, so it never depends on PATH.
 
 ```bash
 # 1. Offline status check (reports new posts vs modified posts with zero external API calls)
@@ -73,9 +79,9 @@ pnpm cli check
 
 # 2. Local offline preview (double click preview.html to copy rich text with one click)
 pnpm cli preview my-post --to wechat      # WeChat mobile viewport preview
-pnpm cli preview my-post --to heybox      # XiaoHeiHe bundle preview (with code card images)
+pnpm cli preview my-post --to heybox      # XiaoHeiHe bundle preview (code / tables / cover)
 
-# 3. Targeted or batch push
+# 3. Targeted or batch push (exits with code 1 when any post fails)
 pnpm cli push my-post --to wechat         # Push a single post to WeChat Draft Box
 pnpm cli push my-post --to heybox         # Push a single post to XiaoHeiHe Draft Box
 pnpm cli push my-post --to all            # Single command push to both platforms
@@ -83,7 +89,32 @@ pnpm cli push -i --dry-run                # Interactive terminal picker simulati
 
 # 4. Routine incremental auto-sync (syncs brand-new posts only by default)
 pnpm cli sync --to all                    # Push new posts to all platforms
+pnpm cli sync --dry-run                   # Rehearse the whole flow without writes
+
+# 5. Sync baseline ("which posts have already been pushed?")
+pnpm cli baseline                         # Mark every published post as already pushed
+pnpm cli baseline --status                # Show baseline file, count and creation time (read-only)
+pnpm cli baseline --import state.json     # Adopt another machine's baseline (merge, never overwrite)
 ```
+
+### What is the sync baseline, and where does it live
+
+The baseline is `sync.stateFile` (default `./state.json`, resolved relative to `config.yaml`). It stores
+each post's `contentHash`, platform draft IDs and image cache — that is how md2posts knows
+**which posts have already been pushed**.
+
+- It is **machine-local** and never travels with the Git repo. On a freshly cloned VPS it is empty, so
+  every post looks "new".
+- To prevent accidental mass pushes, **`sync` aborts when the baseline is empty but pending posts exist**:
+
+  ```
+  [Baseline] No baseline on this machine, yet 61 posts look pending — aborted to avoid duplicate pushes.
+  1) Already published elsewhere: build the baseline first (`pnpm cli baseline`) or copy state.json over;
+  2) Genuinely a first push: add `--initial-push` to confirm;
+  3) Just want to see what would happen: `pnpm cli check`.
+  ```
+- Multi-machine setups: `baseline --import` merges another machine's `state.json` so both share the
+  same notion of "already pushed". Import never overwrites local records.
 
 ---
 
@@ -91,20 +122,31 @@ pnpm cli sync --to all                    # Push new posts to all platforms
 
 ### 1. Handling XiaoHeiHe Login on a Headless VPS
 
-Linux servers typically do not have a graphical desktop. The recommended approach is **copying the local session from your desktop**:
+Servers usually have no graphical desktop. The easiest path is to **bring both the session and the baseline along**:
 
 ```bash
-# Step 1: Scan and log in on your desktop with a display (Windows / Mac)
-xiaoheihe login --browser chrome
+# Step 1: scan once on a machine with a display (session lands at heybox.sessionFile,
+#         default .cache/heybox-session.json)
+pnpm cli login --to heybox
 
-# Step 2: SCP the generated session.json directly to your VPS config directory
-# Windows PowerShell:
-scp $env:LOCALAPPDATA\xiaoheihe-cli\session.json user@your-vps-ip:~/.config/xiaoheihe-cli/session.json
+# Step 2: copy the session and the baseline into the same repo layout on the VPS
+scp ~/Projects/md2posts/.cache/heybox-session.json user@vps:~/md2posts/.cache/heybox-session.json
+scp ~/Projects/md2posts/state.json                user@vps:~/md2posts/state.json
 
-# Linux / macOS:
-# scp ~/.config/xiaoheihe-cli/session.json user@your-vps-ip:~/.config/xiaoheihe-cli/session.json
+# Step 3: verify on the VPS
+cd ~/md2posts
+pnpm cli baseline --status        # should report the imported post count
 ```
-Verify on the VPS with `xiaoheihe auth status`—it will display `authenticated: true` immediately!
+
+> No baseline to copy? Run `pnpm cli baseline` on the VPS itself — it marks every published post as
+> already pushed without touching any platform API, so `sync` will not re-push history.
+
+### 1.5 Where credentials live
+
+- WeChat AppID/AppSecret and the XiaoHeiHe `sessionFile` live in `config.yaml`, and **the config file
+  takes precedence**; environment variables only apply when that field is empty.
+- The installer does **not** create `/etc/md2posts/md2posts.env`. A leftover file from older versions is
+  no longer read and can be deleted.
 
 ### 2. Install Daily systemd Service
 
@@ -119,6 +161,9 @@ journalctl -u md2posts-sync.service -n 50 -f
 # Uninstall (when needed)
 bash systemd/uninstall-systemd.sh [--purge]
 ```
+
+The timer logs the resolved baseline and credential preflight results. **The service exits with code 1
+whenever any post fails**, so `systemctl status` reports `failed` instead of a silent successful no-op.
 
 ---
 

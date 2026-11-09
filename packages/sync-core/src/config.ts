@@ -108,10 +108,10 @@ export function loadConfig(configPath?: string): AppConfig {
   }
   const configDir = path.dirname(resolvedPath);
 
-  // Automatically load local .env if present without requiring external dependencies
+  // Optionally load a repo-local .env (never auto-created). config.yaml remains authoritative;
+  // see the credential resolution below.
   loadEnvFile(path.join(configDir, '.env'));
   loadEnvFile(path.resolve(process.cwd(), '.env'));
-  loadEnvFile('/etc/md2posts/md2posts.env');
 
   let rawYaml = '';
   let parsed: any = {};
@@ -126,29 +126,35 @@ export function loadConfig(configPath?: string): AppConfig {
     }
   }
 
-  // Resolve environment variables for sensitive credentials.
-  // Environment wins over config.yaml, which is convenient for containers/systemd but makes
-  // "the config looks right yet the API says invalid appid" very hard to diagnose — so any
-  // divergence is reported explicitly.
+  // Credential resolution: config.yaml is authoritative; environment variables are only a
+  // fallback for values left empty in the file.
+  //
+  // Rationale: the env file under /etc/md2posts is installation scaffolding that may hold
+  // leftover placeholders. Letting it win silently overrides a correct config.yaml and
+  // surfaces as an unrelated `40013 invalid appid`. Explicit config beats ambient env.
   const configAppId = String(parsed.wechat?.appId || '').trim();
   const configAppSecret = String(parsed.wechat?.appSecret || '').trim();
   const envAppId = (process.env.WECHAT_APPID || '').trim();
   const envAppSecret = (process.env.WECHAT_SECRET || '').trim();
 
+  const appId = configAppId || envAppId;
+  const appSecret = configAppSecret || envAppSecret;
+
   if (envAppId && configAppId && envAppId !== configAppId) {
     console.warn(
-      `[Config] 环境变量 WECHAT_APPID (${envAppId.slice(0, 6)}…) 与 config.yaml 中的 AppID 不一致，` +
-        '将使用环境变量。若接口报 40013，请检查 /etc/md2posts/md2posts.env 或 shell 环境。'
+      `[Config] 已忽略环境变量 WECHAT_APPID (${envAppId.slice(0, 6)}…)：config.yaml 中的 AppID 优先。` +
+        '若想改用环境变量，请清空 config.yaml 的 wechat.appId。'
     );
   }
   if (envAppSecret && configAppSecret && envAppSecret !== configAppSecret) {
     console.warn(
-      '[Config] 环境变量 WECHAT_SECRET 与 config.yaml 中的 AppSecret 不一致，将使用环境变量。'
+      '[Config] 已忽略环境变量 WECHAT_SECRET：config.yaml 中的 AppSecret 优先。' +
+        '若想改用环境变量，请清空 config.yaml 的 wechat.appSecret。'
     );
   }
-
-  const appId = envAppId || configAppId;
-  const appSecret = envAppSecret || configAppSecret;
+  if (!configAppId && envAppId) {
+    console.log('[Config] wechat.appId 未在 config.yaml 中配置，回退使用环境变量 WECHAT_APPID。');
+  }
 
   const rawRepoUrl = parsed.source?.repoUrl ? String(parsed.source.repoUrl).trim() : undefined;
   const rawGitRemote = parsed.source?.gitRemote || parsed.source?.remote || 'origin';
@@ -230,10 +236,11 @@ export function loadConfig(configPath?: string): AppConfig {
       codeBlockMode: parsed.heybox?.codeBlockMode,
     },
     notify: {
+      // config.yaml first, environment only as fallback (consistent with credentials).
       webhookUrl:
+        (parsed.notify?.webhookUrl && String(parsed.notify.webhookUrl).trim()) ||
         process.env.MD2POSTS_WEBHOOK_URL ||
         process.env.MD2WECHAT_WEBHOOK_URL ||
-        parsed.notify?.webhookUrl ||
         undefined,
       onSuccess: parsed.notify?.onSuccess !== false,
       onFailure: parsed.notify?.onFailure !== false,

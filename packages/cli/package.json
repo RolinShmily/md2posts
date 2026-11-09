@@ -5,9 +5,6 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "md2posts": "./dist/index.js"
-  },
   "scripts": {
     "build": "tsc",
     "test": "tsx --test test/*.test.ts"

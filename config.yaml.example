@@ -64,7 +64,11 @@ sync:
   # 默认自动同步的目标平台: wechat (仅微信公众号，默认) | heybox (仅小黑盒) | all (双端同时推送)
   # 命令行参数具有更高优先级，如: pnpm cli sync --to all 或 pnpm cli push <slug> --to all
   target: "wechat"
-  # 同步状态文件保存路径（存放在博客仓库外，记录已同步文章哈希与已上传图片微信 URL）
+  # 同步基线 / 状态文件（相对 config.yaml 所在目录解析）
+  # 记录每篇文章的 contentHash、平台草稿 ID 与图片缓存，也就是"哪些文章已经推过"。
+  # ⚠️ 该文件是【机器本地】的：新机器/VPS 上它为空时，所有文章都会被当作"新增"。
+  #    为防止误推，空基线且存在待推文章时 sync 会中止，需先 `md2posts baseline`
+  #    （或把原机器的 state.json 复制过来），确属首次推送则加 `--initial-push`。
   stateFile: "./state.json"
   # 单次同步推送的最大文章数量（防止首次或批量同步超出微信 API 调用上限）
   maxPerRun: 5
@@ -81,7 +85,8 @@ sync:
   onlyFansCanComment: 0
 
 wechat:
-  # 建议通过环境变量 WECHAT_APPID 与 WECHAT_SECRET 传入，也可在此处直接填写
+  # 凭据以本文件为准；WECHAT_APPID / WECHAT_SECRET 环境变量仅在留空时作为兜底
+  # （留空则微信同步会因缺少凭据而中止，不会用占位值凑数）
   appId: ""
   appSecret: ""
 
@@ -100,7 +105,8 @@ heybox:
   codeBlockMode: "auto"
 
 notify:
-  # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON，也可通过 MD2POSTS_WEBHOOK_URL 环境变量覆盖）
+  # 可选：同步结果 Webhook 通知地址（支持飞书 / 企业微信 / 钉钉 / 通用 JSON）
+  # 本文件优先；留空时回退到 MD2POSTS_WEBHOOK_URL 环境变量
   webhookUrl: ""
   onSuccess: true
   onFailure: true

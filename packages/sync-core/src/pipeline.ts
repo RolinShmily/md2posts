@@ -849,6 +849,8 @@ export class SyncPipeline {
       includeUpdated?: boolean;
       forcePull?: boolean;
       dryRun?: boolean;
+      /** Explicitly allow pushing when this machine has no baseline yet. */
+      allowInitialPush?: boolean;
     } = {}
   ): Promise<SyncReport> {
     return await this.stateStore.withLock(async () => {
@@ -875,6 +877,32 @@ export class SyncPipeline {
           } else {
             skippedUpdatedCount++;
           }
+        }
+      }
+
+      // Baseline guard: a machine with an empty state file has no idea what was already
+      // published elsewhere, so "everything is new" is an illusion (a fresh VPS clone would
+      // silently push maxPerRun articles). Refuse unless the caller opts in explicitly.
+      const stateIsFresh = this.stateStore.isEmpty();
+      if (stateIsFresh && pendingPosts.length > 0 && !options.allowInitialPush) {
+        if (options.dryRun) {
+          console.warn(
+            `[Baseline] 本机状态文件为空（${this.stateStore.filePath}），但有 ${pendingPosts.length} 篇文章待推送。` +
+              '演练模式不拦截，但真实运行前请先建立基线。'
+          );
+        } else {
+          throw new Error(
+            [
+              `[Baseline] 本机尚无同步基线，但检测到 ${pendingPosts.length} 篇待推送文章，已中止以避免误推。`,
+              `  状态文件: ${this.stateStore.filePath}`,
+              '',
+              '这说明该机器从未记录过"哪些文章已经推送过"（例如新克隆的 VPS）。请三选一：',
+              '  1) 若这些文章此前已在别处推送过：先建立基线 —— `pnpm cli baseline`，',
+              '     或把原机器的 state.json 复制到上面的路径；',
+              '  2) 若这是一批确实需要推送的新文章：加 `--initial-push` 明确同意；',
+              '  3) 只想先看看会推什么：`pnpm cli check`。',
+            ].join('\n')
+          );
         }
       }
 
