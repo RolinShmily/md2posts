@@ -426,6 +426,44 @@ async function runPush(
   if (targetSlugs.length > 1) {
     console.log(`📊 批量推送完成：成功 ${successCount} 篇，失败 ${failCount} 篇。\n`);
   }
+
+  // 单篇失败也要让调用方（systemd / CI）拿到非 0 退出码。
+  if (failCount > 0) {
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * Prints failures grouped by identical error message.
+ * A single misconfiguration (e.g. invalid AppID) otherwise repeats the same 200-char
+ * error for every article and buries the actionable part in the journal.
+ */
+function normalizeFailureMessage(message: string): string {
+  return (
+    message
+      // 微信/小黑盒返回的请求追踪号每次都不同，会阻止相同错误合并
+      .replace(/\s*rid:\s*[0-9a-f-]+/gi, '')
+      .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  );
+}
+
+function printGroupedFailures(failed: Array<{ id: string; error: string }>): void {
+  const groups = new Map<string, string[]>();
+  for (const f of failed) {
+    const key = normalizeFailureMessage(f.error);
+    const list = groups.get(key) ?? [];
+    list.push(f.id);
+    groups.set(key, list);
+  }
+
+  console.log('\n❌ 推送失败文章:');
+  let index = 1;
+  for (const [error, ids] of groups) {
+    console.log(`  ${index++}. ${error}`);
+    console.log(`     受影响文章 (${ids.length}): ${ids.join(', ')}`);
+  }
 }
 
 async function runSync(configPath?: string, dryRun = false, includeUpdated = false, cliValues?: any) {
@@ -476,12 +514,14 @@ async function runSync(configPath?: string, dryRun = false, includeUpdated = fal
   }
 
   if (report.failed.length > 0) {
-    console.log('\n❌ 推送失败文章:');
-    for (const f of report.failed) {
-      console.log(`  [${f.id}] 错误: ${f.error}`);
-    }
+    printGroupedFailures(report.failed);
   }
   console.log('');
+
+  // 让 systemd / 监控能看到失败：只要有文章失败就以非 0 退出。
+  if (report.failed.length > 0) {
+    process.exitCode = 1;
+  }
 }
 
 async function runLogin(configPath?: string, cliValues?: any) {

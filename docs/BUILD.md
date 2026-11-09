@@ -202,6 +202,10 @@ pnpm cli push <slug> --to wechat  --dry-run
 pnpm cli push <slug> --to heybox --force
 ```
 
+退出码语义：只要有文章推送失败，`push` / `sync` 都会以 **1** 退出，systemd 会标记 unit `failed`。
+平台凭据是**逐平台隔离**的：`--to all` 时某个平台没凭据只会跳过它并告警，另一个平台照常运行；只有所有请求的平台都不可用才中止。
+相同错误（忽略 `rid` 追踪号）会合并成一条并列出受影响文章，避免同一配置错误刷屏。
+
 写后**必须回读校验**，不能只看返回值：
 
 ```bash
@@ -237,6 +241,10 @@ pnpm cli push <slug> --to heybox --force
 | `Fontconfig warning: invalid attribute 'xsi:nil'` 大量刷屏 | 发行版 fontconfig 新语法不被 `sharp` 内置库识别 | 无害，可忽略；如需静音，移除对应的 `48-guessfamily.conf` / `48-spacing.conf` / `49-sansserif.conf` |
 | `Cannot find module '.../dist/index.js'` | 跨包引用了尚未编译的产物 | 先 `pnpm build`（拓扑序），再跑测试 |
 | 小黑盒 `发帖频率过快:10006` | 短时间多次写操作 | 等待 45–60 秒，不要连续重试 |
+| `[Preflight] 目标平台「X」凭据未就绪 … 本次已跳过该平台` | 只有该平台不可用（`--to all` 时会降级为另一平台） | 补该平台凭据即可；单平台目标（`--to wechat`）缺凭据才会中止 |
+| `[Preflight] … 已中止本次运行` | 请求的所有平台都不可用 | 同上，至少修好一个平台 |
+| `[Config] 环境变量 WECHAT_APPID 与 config.yaml 不一致` | `WECHAT_APPID`/`WECHAT_SECRET` 覆盖了配置文件 | 检查 `/etc/md2posts/md2posts.env` 与 shell 环境，这通常就是 `40013` 的根因 |
+| 微信 `40013 invalid appid` | AppID 与当前环境不匹配 | 校验 AppID 来源（config 与环境变量优先级：`WECHAT_APPID` 覆盖 config） |
 | 微信 `40007 invalid media_id` | 旧草稿/封面素材失效 | 加 `--force` 新建草稿 |
 | 小黑盒草稿"少了一半" | 曾把 HTML 切成多个块提交，平台只取 Block[0] | 确保 `Block[0]` 是整篇 HTML（已在实现中固定） |
 | 同一张图出现两次 | `<img>` 带了 `src` 属性 | 只输出 `data-original`（已固定，见 `toXiaoHeiHeImgTag`） |

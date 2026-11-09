@@ -12,6 +12,14 @@ import { StateStore } from './state-store.js';
 import { ImageProcessor } from './image-processor.js';
 import { normalizeWeChatTitle, normalizeWeChatDigest } from './normalize.js';
 import { sendSyncNotification } from './notifier.js';
+import {
+  checkWeChatCredentials,
+  checkHeyBoxSession,
+  formatCredentialFailure,
+  resolveTargets,
+  type CredentialStatus,
+  type PlatformTarget,
+} from './preflight.js';
 import type { AppConfig } from './config.js';
 
 export interface CheckPostItem {
@@ -116,6 +124,68 @@ export class SyncPipeline {
         headless: config.heybox?.headless,
         codeBlockMode: config.heybox?.codeBlockMode,
       });
+  }
+
+  /**
+   * Fails fast when a requested target has no usable credentials.
+   *
+   * Runs before scan/pull so a misconfigured host does not burn API calls per post,
+   * and so the process exits non-zero (systemd then reports a failed unit instead of
+   * a successful no-op). Skipped for dry runs, which never touch the network.
+   */
+  /**
+   * Resolves which platforms can actually run, based on credential readiness.
+   *
+   * A platform that is not ready is *skipped with a warning* so the other platform keeps
+   * syncing; the run only aborts when every requested platform is unusable. This keeps a
+   * missing HeyBox session from silently disabling WeChat (and vice versa).
+   */
+  private resolveReadyTargets(
+    target: PlatformTarget | 'all',
+    dryRun: boolean
+  ): PlatformTarget | 'all' {
+    // Dry runs never authenticate, so credentials cannot block them.
+    if (dryRun) return target;
+
+    const statuses: Record<PlatformTarget, CredentialStatus> = {
+      wechat: this.wechatClient.isDryRun
+        ? { ready: true, errors: [], warnings: [] }
+        : checkWeChatCredentials(
+            // Prefer the effective client (tests/programmatic use may inject one) over raw config.
+            this.config.wechat.appId || this.wechatClient.appId,
+            Boolean(this.config.wechat.appSecret) || this.wechatClient.hasAppSecret
+          ),
+      heybox: checkHeyBoxSession(
+        this.heyboxPublisher.hasSession(),
+        this.config.heybox?.sessionFile
+      ),
+    };
+
+    for (const t of ['wechat', 'heybox'] as PlatformTarget[]) {
+      for (const w of statuses[t].warnings) {
+        console.warn(`[Preflight] ${w}`);
+      }
+    }
+
+    const resolved = resolveTargets(target, statuses);
+
+    if (resolved.blocked) {
+      const messages = resolved.skipped.map(({ target: t, status }) =>
+        formatCredentialFailure(t === 'wechat' ? '微信' : '小黑盒', status)
+      );
+      throw new Error(messages.join('\n'));
+    }
+
+    for (const { target: t, status } of resolved.skipped) {
+      console.warn(
+        formatCredentialFailure(t === 'wechat' ? '微信' : '小黑盒', status).replace(
+          '已中止本次运行（未推送任何文章）',
+          '本次已跳过该平台，其他平台继续运行'
+        )
+      );
+    }
+
+    return resolved.effective;
   }
 
   public async prepare(options: { forcePull?: boolean } = {}): Promise<void> {
@@ -373,6 +443,7 @@ export class SyncPipeline {
     options: { to?: 'wechat' | 'heybox'; theme?: string; output?: string } = {}
   ): Promise<PipelinePreviewResult> {
     const target = (options.to || 'wechat').toLowerCase() as 'wechat' | 'heybox';
+
     const post = await this.source.getPost(slug);
     if (!post) {
       throw new Error(`[Pipeline] 未找到文章: ${slug}`);
@@ -560,6 +631,11 @@ export class SyncPipeline {
       | 'heybox'
       | 'all';
 
+    const effectiveTarget = this.resolveReadyTargets(
+      targetPlatform,
+      Boolean(options.dryRun)
+    );
+
     const post = await this.source.getPost(slug);
     if (!post) {
       throw new Error(`[Pipeline] 未找到文章: ${slug}`);
@@ -569,12 +645,12 @@ export class SyncPipeline {
     let heyboxRes: HeyBoxPublishResult | undefined;
 
     // 1. WeChat Push
-    if (targetPlatform === 'wechat' || targetPlatform === 'all') {
+    if (effectiveTarget === 'wechat' || effectiveTarget === 'all') {
       wechatRes = await this.pushToWeChat(post, options);
     }
 
     // 2. HeyBox Push
-    if (targetPlatform === 'heybox' || targetPlatform === 'all') {
+    if (effectiveTarget === 'heybox' || effectiveTarget === 'all') {
       heyboxRes = await this.pushToHeyBox(post, options);
     }
 
@@ -776,10 +852,14 @@ export class SyncPipeline {
     } = {}
   ): Promise<SyncReport> {
     return await this.stateStore.withLock(async () => {
+      const requestedTarget = (options.to || this.config.sync.target || 'wechat') as
+        | PlatformTarget
+        | 'all';
+      const effectiveTarget = this.resolveReadyTargets(requestedTarget, Boolean(options.dryRun));
+
       await this.prepare({ forcePull: options.forcePull });
       const posts = await this.source.scanPosts();
       const shouldSyncUpdated = options.includeUpdated ?? this.config.sync.syncUpdated;
-      const targetPlatform = options.to || this.config.sync.target || 'wechat';
 
       const pendingPosts: SourcePost[] = [];
       let skippedUpdatedCount = 0;
@@ -807,7 +887,7 @@ export class SyncPipeline {
       for (const post of toProcess) {
         try {
           const res = await this.pushInternal(post.id, {
-            to: targetPlatform,
+            to: effectiveTarget,
             dryRun: options.dryRun,
           });
           pushed.push(res);

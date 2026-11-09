@@ -126,9 +126,29 @@ export function loadConfig(configPath?: string): AppConfig {
     }
   }
 
-  // Resolve environment variables for sensitive credentials
-  const appId = process.env.WECHAT_APPID || parsed.wechat?.appId || '';
-  const appSecret = process.env.WECHAT_SECRET || parsed.wechat?.appSecret || '';
+  // Resolve environment variables for sensitive credentials.
+  // Environment wins over config.yaml, which is convenient for containers/systemd but makes
+  // "the config looks right yet the API says invalid appid" very hard to diagnose — so any
+  // divergence is reported explicitly.
+  const configAppId = String(parsed.wechat?.appId || '').trim();
+  const configAppSecret = String(parsed.wechat?.appSecret || '').trim();
+  const envAppId = (process.env.WECHAT_APPID || '').trim();
+  const envAppSecret = (process.env.WECHAT_SECRET || '').trim();
+
+  if (envAppId && configAppId && envAppId !== configAppId) {
+    console.warn(
+      `[Config] 环境变量 WECHAT_APPID (${envAppId.slice(0, 6)}…) 与 config.yaml 中的 AppID 不一致，` +
+        '将使用环境变量。若接口报 40013，请检查 /etc/md2posts/md2posts.env 或 shell 环境。'
+    );
+  }
+  if (envAppSecret && configAppSecret && envAppSecret !== configAppSecret) {
+    console.warn(
+      '[Config] 环境变量 WECHAT_SECRET 与 config.yaml 中的 AppSecret 不一致，将使用环境变量。'
+    );
+  }
+
+  const appId = envAppId || configAppId;
+  const appSecret = envAppSecret || configAppSecret;
 
   const rawRepoUrl = parsed.source?.repoUrl ? String(parsed.source.repoUrl).trim() : undefined;
   const rawGitRemote = parsed.source?.gitRemote || parsed.source?.remote || 'origin';

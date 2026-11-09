@@ -44,6 +44,10 @@ export interface DiagnoseReport {
 
 export class WeChatClient {
   public readonly appId: string;
+  /** True when no real API call will be made (used by preflight checks to skip validation). */
+  public readonly isDryRun: boolean;
+  /** Whether a non-empty AppSecret was supplied (never exposes the secret itself). */
+  public readonly hasAppSecret: boolean;
   private readonly appSecret: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -52,9 +56,15 @@ export class WeChatClient {
   private readonly dryRun: boolean;
   private readonly tokenManager: TokenManager;
 
+  private appSecretLengthIsUsable(): boolean {
+    return this.appSecret.length > 0;
+  }
+
   constructor(options: WeChatClientOptions) {
     this.appId = (options.appId || '').trim();
     this.appSecret = (options.appSecret || '').trim();
+    this.isDryRun = Boolean(options.dryRun);
+    this.hasAppSecret = this.appSecretLengthIsUsable();
     this.baseUrl = (options.baseUrl || 'https://api.weixin.qq.com').replace(/\/+$/, '');
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxRetries = options.maxRetries ?? 2;

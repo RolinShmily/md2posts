@@ -188,3 +188,120 @@ draft: false
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('preflight blocks runs with missing/placeholder credentials and allows dry runs', async () => {
+  const { checkWeChatCredentials, checkHeyBoxSession } = await import('../src/preflight.js');
+
+  const empty = checkWeChatCredentials('', false);
+  assert.equal(empty.ready, false);
+  assert.ok(empty.errors.some((e) => e.includes('AppID')));
+  assert.ok(empty.errors.some((e) => e.includes('AppSecret')));
+
+  const placeholder = checkWeChatCredentials('your-appid', true);
+  assert.equal(placeholder.ready, false);
+  assert.ok(placeholder.errors[0].includes('占位值'));
+
+  const valid = checkWeChatCredentials('wx1234567890abcdef', true);
+  assert.equal(valid.ready, true);
+  assert.equal(valid.errors.length, 0);
+
+  const oddAppId = checkWeChatCredentials('1234567890', true);
+  assert.equal(oddAppId.ready, true, 'malformed appId must only warn, not block');
+  assert.equal(oddAppId.warnings.length, 1);
+
+  const noSession = checkHeyBoxSession(false, '/tmp/none.json');
+  assert.equal(noSession.ready, false);
+  assert.ok(noSession.errors[0].includes('/tmp/none.json'));
+
+  assert.equal(checkHeyBoxSession(true).ready, true);
+
+  // Real runs must abort before scanning; dry runs must never be blocked.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-preflight-'));
+  try {
+    const cfg = loadConfig();
+    cfg.source.postsRoot = tmpDir;
+    cfg.source.gitPull = false;
+    cfg.sync.stateFile = path.join(tmpDir, 'state.json');
+    cfg.wechat = { appId: '', appSecret: '' };
+
+    const realPipeline = new SyncPipeline(cfg, new WeChatClient({ appId: '', appSecret: '' }));
+    await assert.rejects(
+      () => realPipeline.sync({ to: 'wechat' }),
+      /凭据未就绪/,
+      'missing credentials must abort the run before pushing anything'
+    );
+
+    const dryPipeline = new SyncPipeline(
+      cfg,
+      new WeChatClient({ appId: '', appSecret: '', dryRun: true })
+    );
+    const dryReport = await dryPipeline.sync({ to: 'wechat', dryRun: true });
+    assert.equal(dryReport.scanned, 0);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('resolveTargets isolates platforms: a missing credential never blocks the other', async () => {
+  const { resolveTargets } = await import('../src/preflight.js');
+  const ok = { ready: true, errors: [], warnings: [] };
+  const bad = { ready: false, errors: ['no session'], warnings: [] };
+
+  // --to all, HeyBox session missing -> WeChat still runs
+  const allWechatOnly = resolveTargets('all', { wechat: ok, heybox: bad });
+  assert.equal(allWechatOnly.blocked, false);
+  assert.equal(allWechatOnly.effective, 'wechat');
+  assert.deepEqual(allWechatOnly.skipped.map((s) => s.target), ['heybox']);
+
+  // --to all, WeChat creds missing -> HeyBox still runs
+  const allHeyboxOnly = resolveTargets('all', { wechat: bad, heybox: ok });
+  assert.equal(allHeyboxOnly.effective, 'heybox');
+  assert.deepEqual(allHeyboxOnly.skipped.map((s) => s.target), ['wechat']);
+
+  // --to all, both ready -> both run
+  const bothReady = resolveTargets('all', { wechat: ok, heybox: ok });
+  assert.equal(bothReady.effective, 'all');
+  assert.equal(bothReady.skipped.length, 0);
+
+  // --to all, both unusable -> blocked
+  const noneReady = resolveTargets('all', { wechat: bad, heybox: bad });
+  assert.equal(noneReady.blocked, true);
+
+  // Single target still blocks when that target is unusable
+  assert.equal(resolveTargets('wechat', { wechat: bad, heybox: ok }).blocked, true);
+
+  // Single target is unaffected by the other platform being unusable
+  const single = resolveTargets('wechat', { wechat: ok, heybox: bad });
+  assert.equal(single.blocked, false);
+  assert.equal(single.effective, 'wechat');
+  assert.equal(single.skipped.length, 0);
+});
+
+test('pipeline keeps WeChat working when HeyBox session is unavailable', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-isolate-'));
+  try {
+    const cfg = loadConfig();
+    cfg.source.postsRoot = tmpDir;
+    cfg.source.gitPull = false;
+    cfg.sync.stateFile = path.join(tmpDir, 'state.json');
+    cfg.wechat = { appId: 'wx1234567890abcdef', appSecret: 'test_secret' };
+    cfg.heybox = { sessionFile: path.join(tmpDir, 'no-such-session.json') };
+
+    // NOTE: a real (non-dry) client, so preflight actually evaluates WeChat.
+    const pipeline = new SyncPipeline(
+      cfg,
+      new WeChatClient({
+        appId: 'wx1234567890abcdef',
+        appSecret: 'test_secret',
+      })
+    );
+
+    // HeyBox is unusable here (no session file). A `--to all` run must NOT throw,
+    // because WeChat is ready — it degrades to WeChat only.
+    const report = await pipeline.sync({ to: 'all' });
+    assert.equal(report.failed.length, 0);
+    assert.equal(report.scanned, 0);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
