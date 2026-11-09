@@ -262,15 +262,32 @@ export async function publishDraftWithBrowser(
 
     await page.waitForTimeout(1000);
 
-    // 6. Click "保存草稿" Button
-    console.log(`[HeyBox] 正在提交草稿箱...`);
+    // 6. Wait until "保存草稿" is actually clickable, then click it.
+    //    The button stays disabled while the account is muted / rate limited, so a blind
+    //    30s click retry hides the real reason. Poll first and fail with a diagnosis.
+    console.log(`[HeyBox] 正在等待「保存草稿」按钮可用...`);
     const saveDraftBtn = page.locator('button.editor-publish__save-draft');
-    if (await saveDraftBtn.isVisible()) {
-      await saveDraftBtn.click();
-    } else {
-      // Fallback click via text
-      await page.getByText('保存草稿', { exact: true }).click();
+    const enabled = await page
+      .waitForFunction(
+        () => {
+          const btn = document.querySelector('button.editor-publish__save-draft') as HTMLButtonElement | null;
+          return Boolean(btn && !btn.disabled);
+        },
+        { timeout: 15_000 }
+      )
+      .then(() => true)
+      .catch(() => false);
+
+    if (!enabled) {
+      throw new HeyBoxError(
+        '编辑器「保存草稿」按钮始终不可用（通常代表账号被禁言/限流，或图片上传失败）。' +
+          '请到小黑盒「我 - 设置 - 帮助中心&问题反馈」查看账号状态。',
+        'SAVE_BUTTON_DISABLED'
+      );
     }
+
+    console.log(`[HeyBox] 正在提交草稿箱...`);
+    await saveDraftBtn.click();
 
     // 7. Wait for URL change or draft save indicator
     await page.waitForTimeout(2000);

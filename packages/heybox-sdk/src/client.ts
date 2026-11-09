@@ -19,6 +19,7 @@ import {
   HeyBoxApiClient,
   resolveHeyBoxSessionFile,
 } from './api-client.js';
+import { HeyBoxError } from './errors.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -225,6 +226,33 @@ export class HeyBoxClient {
       };
     }
 
+    // 0. Account-level preflight: the platform rejects writes with HTTP 503 (and disables
+    //    the editor's save button) while an account is muted, so report the real reason first.
+    let limits: Awaited<ReturnType<HeyBoxApiClient['getPostLimits']>> | null = null;
+    let mutedReason = '';
+    if (this.apiClient.hasSession()) {
+      limits = await this.apiClient.getPostLimits().catch(() => null);
+      if (limits) {
+        if (limits.linkMessage || limits.commentMessage) {
+          mutedReason = limits.linkMessage || limits.commentMessage || '';
+          console.warn(`[HeyBox] ⚠ 平台限制提示：${mutedReason}`);
+        }
+        if (!limits.canPostArticle) {
+          throw new HeyBoxError(
+            `账号当前不可发布文章：${limits.articleMessage || '平台返回 can_post_article=false'}`,
+            'ARTICLE_FORBIDDEN'
+          );
+        }
+        const plainLen = prepared.markdown.replace(/<[^>]+>/g, '').length;
+        if (plainLen > limits.textMax) {
+          throw new HeyBoxError(
+            `正文超长：${plainLen} 字，平台上限 ${limits.textMax} 字。请拆分文章后重试。`,
+            'TEXT_TOO_LONG'
+          );
+        }
+      }
+    }
+
     // 1. Primary: Pure TypeScript Native API push (Zero Python, Zero external CLI)
     if (this.apiClient.hasSession()) {
       try {
@@ -330,7 +358,12 @@ export class HeyBoxClient {
     }
 
     // 3. Fallback: Playwright Headless Browser Automation
-    if (!options.skipBrowser && hasSavedSession(this.options.sessionFile)) {
+    //    Skipped while the account is muted: the editor keeps its save button disabled and a
+    //    risk-control mask blocks clicks, so this channel can only burn 30+ seconds.
+    if (mutedReason) {
+      console.warn('[HeyBox] 账号当前处于禁言状态，跳过浏览器兜底通道。');
+    }
+    if (!mutedReason && !options.skipBrowser && hasSavedSession(this.options.sessionFile)) {
       try {
         const browserRes = await publishDraftWithBrowser(prepared, {
           sessionFile: this.options.sessionFile,
@@ -352,22 +385,28 @@ export class HeyBoxClient {
           message: browserRes.message,
         };
       } catch (err: any) {
-        console.warn(`[HeyBox] 浏览器自动推流提示 (${err.message})，降级为本地发布包。`);
+        // Playwright errors carry a multi-line call log; keep the journal readable.
+        const brief = String(err.message || err).split('\n')[0].slice(0, 200);
+        console.warn(`[HeyBox] 浏览器自动推流失败 (${brief})，降级为本地发布包。`);
       }
     }
 
-    const tip = this.hasSession()
-      ? '小黑盒专属发布包已生成！双击 preview.html 即可一键复制富文本粘贴。'
-      : '小黑盒发布包已就位！可运行 `pnpm cli login --to heybox` 扫码或配置 sessionFile 开启全自动无人值守推流。';
+    // Nothing produced a draft: report a real failure instead of pretending success.
+    // The bundle stays on disk so the author can still paste it manually.
+    const reasons: string[] = [];
+    if (!this.hasSession()) {
+      reasons.push('未登录小黑盒（缺 session），可运行 `pnpm cli login --to heybox`');
+    } else {
+      reasons.push('原生 API 与 CLI 通道均未成功');
+    }
+    if (limits?.linkMessage) {
+      reasons.push(`平台提示：${limits.linkMessage}`);
+    }
+    reasons.push('可打开 bundle 内 preview.html 手动复制粘贴');
 
-    return {
-      slug: article.id,
-      title: prepared.title,
-      bundleDir,
-      hasCover: Boolean(prepared.coverBuffer),
-      codeImagesCount,
-      publishedViaCli: false,
-      message: tip,
-    };
+    throw new HeyBoxError(
+      `未创建小黑盒草稿（${reasons.join('；')}）。发布包已生成：${bundleDir}`,
+      'NO_CHANNEL_SUCCEEDED'
+    );
   }
 }

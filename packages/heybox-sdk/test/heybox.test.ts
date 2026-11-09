@@ -16,6 +16,7 @@ import {
   renderHeyBoxRichHtml,
   sanitizeHeyBoxHtml,
   selectReferencedAssets,
+  normalizeHeyBoxTitle,
   HeyBoxClient,
   HeyBoxClient,
   type HeyBoxArticleInput,
@@ -473,4 +474,99 @@ test('external link threshold produces a publishing warning', async () => {
   assert.equal(noisy.externalLinkCount, 6);
   assert.equal(noisy.warnings.length, 1);
   assert.match(noisy.warnings[0], /站外链接/);
+});
+
+test('title is truncated to the platform 30-character limit', async () => {
+  const long = '一个明显超过三十个字符上限的小黑盒文章标题用于验证裁剪逻辑是否正确工作';
+  const short = '简短标题';
+
+  assert.equal(normalizeHeyBoxTitle(short).title, short);
+  const cut = normalizeHeyBoxTitle(long);
+  assert.ok(cut.title.length <= 30, `title must be <= 30 chars, got ${cut.title.length}`);
+  assert.equal(cut.stripped, true);
+
+  // Explicit limit still honoured (WeChat uses 64).
+  assert.ok(normalizeHeyBoxTitle(long, 64).title.length <= 64);
+
+  // Under the limit nothing is stripped (titles are left untouched on purpose).
+  assert.equal(normalizeHeyBoxTitle('主标题 | 副标题').title, '主标题 | 副标题');
+
+  // Over the limit: suffix tags are dropped right-to-left before any hard cut.
+  const tagged = normalizeHeyBoxTitle(
+    '这是一个很长的主标题用于超过三十个字符限制 | 副标题 | 分类'
+  );
+  assert.ok(tagged.title.length <= 30);
+  assert.ok(!tagged.title.includes('分类'), 'trailing tag should be stripped first');
+});
+
+test('publishDraft surfaces account mute / length limits instead of faking success', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-limits-'));
+  const postDir = path.join(tmpDir, 'p');
+  fs.mkdirSync(postDir);
+  await (await import('sharp')).default({
+    create: { width: 64, height: 36, channels: 3, background: '#123456' },
+  })
+    .png()
+    .toFile(path.join(postDir, 'shot.png'));
+  fs.writeFileSync(path.join(postDir, 'index.md'), '正文\n');
+
+  const article = {
+    id: 'limits',
+    title: '限额测试',
+    bodyMarkdown: '正文内容足够长以满足最小长度要求。'.repeat(4),
+    canonicalUrl: 'https://blog.example.com/posts/limits/',
+    postDir,
+    localAssetPaths: [path.join(postDir, 'shot.png')],
+  };
+
+  const client = new HeyBoxClient({ assetRoots: ['{postDir}'], outputDir: path.join(tmpDir, 'out') });
+
+  // Pretend a session exists, and the platform says "muted" / article-forbidden.
+  (client as any).apiClient.hasSession = () => true;
+  (client as any).apiClient.getPostLimits = async () => ({
+    canPostArticle: false,
+    canPostLink: false,
+    canPostComment: false,
+    articleMessage: '由于违反社区规定，您已被禁言，还剩6天',
+    linkMessage: '由于违反社区规定，您已被禁言，还剩6天',
+    commentMessage: undefined,
+    titleMax: 30, titleMin: 2, textMax: 30000, textMin: 50, picMax: 100,
+  });
+
+  await assert.rejects(
+    () => client.publishDraft(article, { skipBrowser: true }),
+    (err: any) => {
+      assert.equal(err.code, 'ARTICLE_FORBIDDEN');
+      assert.match(err.message, /禁言/);
+      return true;
+    }
+  );
+
+  // Muted-but-can-article + nothing succeeded: must throw, not return a "success" tip.
+  (client as any).apiClient.getPostLimits = async () => ({
+    canPostArticle: true,
+    canPostLink: false,
+    canPostComment: false,
+    articleMessage: undefined,
+    linkMessage: '由于违反社区规定，您已被禁言，还剩6天',
+    commentMessage: undefined,
+    titleMax: 30, titleMin: 2, textMax: 30000, textMin: 50, picMax: 100,
+  });
+  (client as any).apiClient.createArticleDraft = async () => {
+    throw new Error('小黑盒 API 网络异常 (HTTP 503)');
+  };
+  (client as any).isCliAvailable = async () => false;
+
+  await assert.rejects(
+    () => client.publishDraft(article, { skipBrowser: true }),
+    (err: any) => {
+      assert.equal(err.code, 'NO_CHANNEL_SUCCEEDED');
+      assert.match(err.message, /未创建小黑盒草稿/);
+      assert.match(err.message, /禁言/);
+      assert.match(err.message, /out/);
+      return true;
+    }
+  );
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });

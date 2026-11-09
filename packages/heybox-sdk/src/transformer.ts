@@ -43,8 +43,10 @@ function getMimeType(filePath: string): string {
  * if longer than maxLen (default 40).
  */
 export function normalizeHeyBoxTitle(
+  // XiaoHeiHe caps article titles at 30 characters (the editor renders `n/30`),
+  // so the default follows the platform limit rather than a nicer-looking number.
   rawTitle: string,
-  maxLen = 40
+  maxLen = 30
 ): { title: string; stripped: boolean } {
   let clean = rawTitle.replace(/\s+/g, ' ').trim();
   if (clean.length <= maxLen) {

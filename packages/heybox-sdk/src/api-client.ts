@@ -24,6 +24,21 @@ export interface UploadedMediaResult {
   filename: string;
 }
 
+export interface PostLimits {
+  canPostArticle: boolean;
+  canPostLink: boolean;
+  canPostComment: boolean;
+  /** Platform-provided reason when a capability is disabled (e.g. a mute notice). */
+  articleMessage?: string;
+  linkMessage?: string;
+  commentMessage?: string;
+  titleMax: number;
+  titleMin: number;
+  textMax: number;
+  textMin: number;
+  picMax: number;
+}
+
 export interface CreateDraftResult {
   draftId: string;
   shareUrl?: string;
@@ -209,6 +224,31 @@ export class HeyBoxApiClient {
     }
 
     return data;
+  }
+
+  /**
+   * Reads the account's posting limits and mute status.
+   *
+   * The platform silently rejects writes (HTTP 503 / disabled editor buttons) when the
+   * account is muted, so callers should surface `msg_post_*` instead of guessing.
+   */
+  public async getPostLimits(): Promise<PostLimits> {
+    const res = await this.request('/bbs/app/profile/post/limits');
+    const r = res.result || {};
+    const article = r.article_limit || {};
+    return {
+      canPostArticle: r.can_post_article !== false,
+      canPostLink: r.can_post_link !== false,
+      canPostComment: r.can_post_comment !== false,
+      articleMessage: r.msg_post_article || undefined,
+      linkMessage: r.msg_post_link || undefined,
+      commentMessage: r.msg_post_comment || undefined,
+      titleMax: article.title_limit?.max ?? 30,
+      titleMin: article.title_limit?.min ?? 2,
+      textMax: article.text_limit?.max ?? 30000,
+      textMin: article.text_limit?.min ?? 50,
+      picMax: article.pic_limit?.max ?? 100,
+    };
   }
 
   /**
