@@ -39,7 +39,7 @@ pnpm --filter @md2posts/heybox-sdk build
 pnpm --filter @md2posts/heybox-sdk test
 
 # 单个测试文件
-cd packages/heybox-sdk && npx tsx --test test/heybox.test.ts
+cd src/heybox-sdk && npx tsx --test test/heybox.test.ts
 ```
 
 ### 2.3 CLI 自检序列（改完代码先跑这一套）
@@ -57,7 +57,7 @@ pnpm cli push <slug> --dry-run --to heybox   # 组装发布包，不发写请求
 ## 3. 目录与命名约定
 
 ```text
-packages/<pkg>/
+src/<pkg>/
 ├── src/            # 仅此目录参与编译
 │   └── index.ts    # 包的唯一公共出口
 ├── test/           # *.test.ts，node:test + tsx
@@ -67,7 +67,7 @@ packages/<pkg>/
 
 - **跨包引用只能通过 `@md2posts/<pkg>` 的 barrel（`src/index.ts`）**，禁止深路径导入其他包的内部文件。
 - 包内文件用 `./xxx.js` 后缀导入（NodeNext ESM 要求）。
-- 新增包：建目录 → 加 `tsconfig.json`（复制现有包）→ 在 `pnpm-workspace.yaml` 的 `packages/*` 下自动纳入 → 在依赖方 `package.json` 写 `workspace:*`。
+- 新增包：建目录 → 加 `tsconfig.json`（复制现有包）→ 在 `pnpm-workspace.yaml` 的 `src/*` 下自动纳入 → 在依赖方 `package.json` 写 `workspace:*`。
 
 ---
 

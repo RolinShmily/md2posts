@@ -165,7 +165,7 @@ bash systemd/uninstall-systemd.sh [--purge]
 
 ```text
 md2posts/
-├── packages/
+├── src/
 │   ├── wechat-sdk/     # 微信公众平台 API Client（Token 管理、素材上传、草稿箱，零运行时依赖）
 │   ├── heybox-sdk/     # 小黑盒 SDK（文章转换、代码/表格卡片、封面、推流发布）
 │   ├── renderer/       # Markdown 渲染与 AST 预处理（28 套精美主题）

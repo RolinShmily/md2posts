@@ -63,26 +63,26 @@ md2posts 把「Markdown + YAML frontmatter 的静态博客文章」转成「平�
 
 ## 3. 各包职责
 
-### `packages/sources` — 内容与资产来源
+### `src/sources` — 内容与资产来源
 
 - `FsSource`：扫描本地目录或 Git 仓库（`bundle` / `flat` 两种布局），解析 frontmatter，产出 `SourcePost`。
 - `contentHash`：把 `title/summary/cover/body` **以及所有兄弟图片的字节哈希**合成 SHA-256，用于「内容是否变化」判定——图片被替换也算变化。
 - `resolveLocalAsset`：**唯一的资产路径解析实现**，支持 `{postDir}` / `{repoRoot}` 占位符、URL 解码、绝对路径，被微信与小黑盒两条链路共用。
 - `findGitRoot`：向上查找 `.git`，用于展开 `{repoRoot}`。
 
-### `packages/renderer` — 微信公众号排版
+### `src/renderer` — 微信公众号排版
 
 - `preprocess.ts`：基于 markdown-it AST 定位代码块行区间，**保证代码块永不被后续正则改写**；再处理标题顺移、任务列表、数学公式、iframe、脚注、图注清洗。
 - `vendor/`：适配自 md-wechat 的内联样式渲染器，内置 28 套主题；`hljs-extra.ts` 扩展高亮语言别名。
 - 输出是「微信可安全粘贴的 HTML」，不发任何网络请求。
 
-### `packages/wechat-sdk` — 微信 API 客户端
+### `src/wechat-sdk` — 微信 API 客户端
 
 - `token.ts`：token 获取/缓存/并发去重，遇 `42001/40001` 自动刷新并重试一次，遇 `45009` 配额错误**不重试**。
 - `endpoints/draft.ts`：草稿、素材、发布状态接口。
 - `errors.ts`：把微信返回码转成可判定的 `WeChatError`（含 IP 白名单错误的出口 IP 解析）。
 
-### `packages/heybox-sdk` — 小黑盒 SDK 与文章转换
+### `src/heybox-sdk` — 小黑盒 SDK 与文章转换
 
 四个关注点分离清晰：
 
@@ -95,7 +95,7 @@ md2posts 把「Markdown + YAML frontmatter 的静态博客文章」转成「平�
 | `browser-publisher.ts` | 无头浏览器兜底通道（API 不可用时直接操作编辑器） |
 | `client.ts` | 编排：导出发布包 → API → CLI → 浏览器 → 本地包，逐级降级 |
 
-### `packages/sync-core` — 编排层
+### `src/sync-core` — 编排层
 
 - `pipeline.ts`：`prepare / check / baseline / preview / push / sync` 六个动作；微信与小黑盒分别推送，失败互不影响。
 - `state-store.ts`：`state.json` 持久化 + 跨进程文件锁。记录每篇的 `contentHash`、`draftMediaId` / `heyboxDraftId`、图片与封面的上传缓存。
@@ -103,7 +103,7 @@ md2posts 把「Markdown + YAML frontmatter 的静态博客文章」转成「平�
 - `normalize.ts`：标题/摘要裁剪、交互式选择表达式解析。
 - `notifier.ts`：Webhook 通知（飞书/企业微信/钉钉/通用 JSON）。
 
-### `packages/cli` — 入口
+### `src/cli` — 入口
 
 仅做三件事：解析参数 → 组装配置与客户端 → 打印结果。业务逻辑一律下沉到 `sync-core`。
 
@@ -170,7 +170,7 @@ stateStore ──> 写回 hash 与平台草稿 ID
 
 | 需求 | 落点 |
 |---|---|
-| 新增平台 | 新建 `packages/<platform>-sdk`，实现 `publishDraft()`；在 `sync-core/pipeline.ts` 增加分支；CLI 增加 `--to` 取值 |
+| 新增平台 | 新建 `src/<platform>-sdk`，实现 `publishDraft()`；在 `sync-core/pipeline.ts` 增加分支；CLI 增加 `--to` 取值 |
 | 新增内容来源（如 RSS/Notion） | 实现 `SourceAdapter` 接口，替换 `sources` 的注入 |
 | 新增公众号主题 | `renderer/vendor/themes.js` |
 | 调整小黑盒排版 | `transformer.ts` 的转换阶段 / `card-renderer.ts` 的卡片样式 |

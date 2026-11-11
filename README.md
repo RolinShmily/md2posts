@@ -171,7 +171,7 @@ whenever any post fails**, so `systemctl status` reports `failed` instead of a s
 
 ```text
 md2posts/
-├── packages/
+├── src/
 │   ├── wechat-sdk/     # WeChat Official Account API client (zero runtime dependencies)
 │   ├── heybox-sdk/     # XiaoHeiHe SDK: transformer, code/table cards, cover, publisher
 │   ├── renderer/       # Markdown renderer & AST preprocessor (28 themes)

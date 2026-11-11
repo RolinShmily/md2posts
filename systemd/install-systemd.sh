@@ -62,7 +62,7 @@ if [[ ! -d "${REPO_DIR}/node_modules" ]]; then
   (cd "${REPO_DIR}" && "${PNPM_BIN}" install)
 fi
 
-if [[ ! -f "${REPO_DIR}/packages/cli/dist/index.js" ]]; then
+if [[ ! -f "${REPO_DIR}/src/cli/dist/index.js" ]]; then
   echo "==> 检测到项目尚未编译，正在执行 pnpm build ..."
   (cd "${REPO_DIR}" && "${PNPM_BIN}" build)
 fi
@@ -94,7 +94,7 @@ Environment="NODE_ENV=production"
 Environment="LANG=C.UTF-8"
 Environment="LC_ALL=C.UTF-8"
 Environment="PATH=${USER_HOME}/.local/bin:${USER_HOME}/.cargo/bin:${NODE_DIR}:${PNPM_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=${FLOCK_BIN} -n /tmp/md2posts.lock ${NODE_BIN} ${REPO_DIR}/packages/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
+ExecStart=${FLOCK_BIN} -n /tmp/md2posts.lock ${NODE_BIN} ${REPO_DIR}/src/cli/dist/index.js sync -c ${REPO_DIR}/config.yaml
 StandardOutput=journal
 StandardError=journal
 
